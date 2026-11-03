@@ -31,6 +31,7 @@ namespace VRCFTMapper.Editor
         readonly Dictionary<string, float> smoothState = new Dictionary<string, float>();
         readonly Dictionary<string, float> manualGaze = new Dictionary<string, float>();
         int rightTab;                 // 0 = マッピング, 1 = 目・視線
+        NativePlan nativePlan;        // ネイティブ出力の変換計画 (Layout ごとに更新)
         Vector2 eyeScroll;
         float manualVerge;            // 手動テスト: 片目あたりの内寄せ量
         float gazeDistance;           // 手動テスト: 注視距離 (m)。0 = 使わない
@@ -58,6 +59,7 @@ namespace VRCFTMapper.Editor
         {
             EditorApplication.update += Tick;
             Undo.undoRedoPerformed += OnUndo;
+            EditorApplication.playModeStateChanged += OnPlayModeChanged;
             minSize = new Vector2(900, 520);
         }
 
@@ -65,6 +67,8 @@ namespace VRCFTMapper.Editor
         {
             EditorApplication.update -= Tick;
             Undo.undoRedoPerformed -= OnUndo;
+            EditorApplication.playModeStateChanged -= OnPlayModeChanged;
+            DestroyPlayModeMapper();
             StopLiveScene();
             osc.Dispose();
             oscQuery.Dispose();
@@ -92,6 +96,11 @@ namespace VRCFTMapper.Editor
             {
                 lastJitterRepaint = now;
                 changed = true;
+            }
+            if (EditorApplication.isPlaying && now - lastPlaySend > 1 / 60.0 && ResolveTargets())
+            {
+                lastPlaySend = now;
+                SendToPlayMode();
             }
             if (changed) { ApplyPreview(); Repaint(); }
             else if (osc.Listening || osc.playing) Repaint();
@@ -291,13 +300,18 @@ namespace VRCFTMapper.Editor
         // ------------------------------------------------------------
         void OnGUI()
         {
+            ResolveTargets();
             DrawToolbar();
             if (avatar == null)
             {
                 EditorGUILayout.HelpBox("VRC Avatar Descriptor を持つアバターを指定してください。", MessageType.Info);
                 return;
             }
-            if (mapper == null) mapper = avatar.GetComponentInChildren<VRCFTMapper>(true);
+            if (mapper == null && EditorApplication.isPlaying)
+            {
+                EditorGUILayout.HelpBox("プレイモード中です。VRCFT Mapper の設定はビルド時に取り除かれるため表示できません。\n編集モードでこのウィンドウにアバターを表示してからプレイモードに入ると、その設定でテストできます。", MessageType.Info);
+                return;
+            }
             if (mapper == null)
             {
                 EditorGUILayout.HelpBox("このアバターに VRCFT Mapper がありません。", MessageType.Info);
@@ -312,6 +326,8 @@ namespace VRCFTMapper.Editor
             }
 
             preview.Setup(avatar.gameObject);
+            if (Event.current.type == EventType.Layout)
+                nativePlan = mapper.outputMode == FTOutputMode.Native ? NativePlan.Build(mapper) : null;
 
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -339,6 +355,14 @@ namespace VRCFTMapper.Editor
                 }
                 GUILayout.FlexibleSpace();
                 if (mapper != null)
+                {
+                    EditorGUI.BeginChangeCheck();
+                    GUILayout.Label("出力", GUILayout.Width(28));
+                    var om = (FTOutputMode)EditorGUILayout.Popup((int)mapper.outputMode,
+                        new[] { "ネイティブ (VRChat FT)", "従来 (VRCFT パラメータ)" }, EditorStyles.toolbarPopup, GUILayout.Width(150));
+                    if (EditorGUI.EndChangeCheck()) { Undo.RecordObject(mapper, "出力方式の変更"); mapper.outputMode = om; Dirty(); }
+                }
+                if (mapper != null && mapper.outputMode == FTOutputMode.Legacy)
                 {
                     EditorGUI.BeginChangeCheck();
                     GUILayout.Label("Prefix", GUILayout.Width(38));
@@ -474,6 +498,8 @@ namespace VRCFTMapper.Editor
             }
 
             EditorGUILayout.Space();
+            DrawPlayModePanel();
+            EditorGUILayout.Space();
             DrawTrackingPanel();
             EditorGUILayout.Space();
             DrawBudget();
@@ -556,6 +582,15 @@ namespace VRCFTMapper.Editor
                 var so = new SerializedObject(mapper);
                 so.Update();
 
+                if (mapper.outputMode == FTOutputMode.Native)
+                {
+                    EditorGUILayout.LabelField("ネイティブ出力", EditorStyles.miniBoldLabel);
+                    EditorGUILayout.PropertyField(so.FindProperty("nativeToggle"), new GUIContent("FT / 表情トグル", "メニューから FT モードと手動表情モードを切替 (同期 1bit)"));
+                    EditorGUILayout.PropertyField(so.FindProperty("nativeLerpSpeed"), new GUIContent("切替の速さ"));
+                    EditorGUILayout.PropertyField(so.FindProperty("nativeCurveSegments"), new GUIContent("カーブの区間数"));
+                    EditorGUILayout.LabelField("有効判定は VRChat 標準の UserEyeTracking / UserFaceTracking を使います", EditorStyles.wordWrappedMiniLabel);
+                }
+
                 // ① メニュー
                 EditorGUILayout.LabelField("① 有効フラグ / メニュー", EditorStyles.miniBoldLabel);
                 EditorGUILayout.PropertyField(so.FindProperty("generateTrackingMenu"), new GUIContent("メニューにトグル追加"));
@@ -631,6 +666,24 @@ namespace VRCFTMapper.Editor
             GUI.Label(r, $" {b.total} / {b.limit} bit   (FT {b.ours} bit・{b.ourParamCount} 個 / その他 {b.others})", EditorStyles.whiteMiniLabel);
             if (b.total > b.limit)
                 EditorGUILayout.HelpBox($"{b.total - b.limit} bit 超過しています。Binary 化やビット数削減、両側パラメータへの統合を検討してください。", MessageType.Error);
+            if (mapper != null && mapper.outputMode == FTOutputMode.Native && nativePlan != null)
+            {
+                var np = nativePlan;
+                EditorGUILayout.LabelField("ネイティブ Face Tracking (ランク予測)", EditorStyles.boldLabel);
+                void Row(string label, int v, int[] limits)
+                {
+                    var rank = NativePlan.Rank(v, limits);
+                    var c = GUI.color;
+                    GUI.color = rank == "Excellent" || rank == "Good" ? new Color(0.6f, 1f, 0.6f) : rank == "Medium" ? new Color(1f, 0.9f, 0.5f) : new Color(1f, 0.6f, 0.5f);
+                    EditorGUILayout.LabelField(label, $"{v}  ({rank})", EditorStyles.miniLabel);
+                    GUI.color = c;
+                }
+                Row("Face Tracking Operations", np.Operations, NativePlan.OpsLimits);
+                Row("Forwarded Parameters", np.Forwarded, NativePlan.ForwardLimits);
+                EditorGUILayout.LabelField("式の命令数", $"{np.Instructions} / {NativePlan.MaxTotalInstructions}", EditorStyles.miniLabel);
+                EditorGUILayout.LabelField("直結 / 式 / 生成シェイプ", $"{np.setEntries.Count} / {np.behaviors.Count(x => x.shape != null)} / {np.generated.Count}", EditorStyles.miniLabel);
+                foreach (var w in np.warnings) EditorGUILayout.HelpBox(w, MessageType.Warning);
+            }
             showBudgetDetail = EditorGUILayout.Foldout(showBudgetDetail, "内訳");
             if (showBudgetDetail)
                 foreach (var (n, bits) in b.breakdown)
@@ -730,6 +783,13 @@ namespace VRCFTMapper.Editor
 
                     bool missing = m.renderer == null || m.renderer.sharedMesh == null || m.renderer.sharedMesh.GetBlendShapeIndex(m.blendShape) < 0;
                     if (missing) GUILayout.Label(EditorGUIUtility.IconContent("console.warnicon.sml", "シェイプキーが見つかりません"), GUILayout.Width(20));
+                    if (nativePlan != null && nativePlan.status.TryGetValue(m, out var ns))
+                    {
+                        var c0 = GUI.color;
+                        GUI.color = ns.error ? FTControls.Red : ns.warning ? new Color(1f, 0.85f, 0.3f) : ns.text.StartsWith("直結") ? new Color(0.5f, 1f, 0.6f) : new Color(0.6f, 0.8f, 1f);
+                        GUILayout.Label(new GUIContent(ns.error ? "✕" : ns.text.StartsWith("直結") ? "●" : "ƒ", ns.text), EditorStyles.miniBoldLabel, GUILayout.Width(14));
+                        GUI.color = c0;
+                    }
 
                     float input = InputFor(m, out bool ext);
                     GUILayout.Label($"{FTMath.Evaluate(m, input) * 100f:0}", EditorStyles.miniLabel, GUILayout.Width(30));
@@ -753,6 +813,18 @@ namespace VRCFTMapper.Editor
                 }
 
                 if (!foldout.Contains(i)) return false;
+
+                if (nativePlan != null && nativePlan.status.TryGetValue(m, out var nst))
+                {
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        GUILayout.Label("ネイティブ: " + nst.text, nst.error || nst.warning ? EditorStyles.boldLabel : EditorStyles.miniLabel);
+                        GUILayout.FlexibleSpace();
+                        EditorGUI.BeginChangeCheck();
+                        bool os = EditorGUILayout.ToggleLeft(new GUIContent("範囲外はシェイプキー生成", "out が 0..1 を超える / 負になるとき、変形量を拡大・反転したシェイプキーをビルド時に生成"), m.overshootShape, GUILayout.Width(150));
+                        if (EditorGUI.EndChangeCheck()) { Undo.RecordObject(mapper, "シェイプキー生成の切替"); m.overshootShape = os; Dirty(); }
+                    }
+                }
 
                 // ---- 型 / 同期 ----
                 using (new EditorGUILayout.HorizontalScope())
@@ -880,6 +952,18 @@ namespace VRCFTMapper.Editor
                     Undo.RecordObject(mapper, "パラメータ変更");
                     m.parameter = pp.name;
                     m.signed = pp.signed;
+                    Dirty(); ApplyPreview();
+                });
+            }
+            foreach (var k in NativeKeys.All)
+            {
+                var kk = k;
+                string grp = new[] { "EyeLook", "Eye", "Brow", "Nasal", "Nose", "Cheek", "Jaw", "Lip", "Mouth", "Tongue" }.FirstOrDefault(pfx => k.StartsWith(pfx)) ?? "Other";
+                menu.AddItem(new GUIContent($"ネイティブキー/{grp}/{k}"), m.parameter == k, () =>
+                {
+                    Undo.RecordObject(mapper, "パラメータ変更");
+                    m.parameter = kk;
+                    m.signed = false;
                     Dirty(); ApplyPreview();
                 });
             }

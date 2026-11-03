@@ -46,6 +46,14 @@ namespace VRCFTMapper.Editor
                     }
 
             var ours = new Dictionary<string, int>();
+            if (mapper != null && mapper.outputMode == FTOutputMode.Native)
+            {
+                // ネイティブ: 表情データは同期パラメータを使わない。FT / 表情トグルだけ
+                if (mapper.nativeToggle) { ours["VRCFTM/NativeFT"] = 1; others.Remove("VRCFTM/NativeFT"); }
+                int o2 = ours.Values.Sum(), x2 = others.Values.Sum();
+                return new BudgetResult { ours = o2, others = x2, total = o2 + x2, limit = Limit, ourParamCount = ours.Count,
+                    breakdown = ours.Select(kv => (kv.Key, kv.Value)).ToList() };
+            }
             if (mapper != null)
                 foreach (var g in mapper.mappings.Where(m => m.enabled && m.renderer != null && !VRCFTMapper.IsGaze(m.parameter)).GroupBy(m => m.parameter))
                 {

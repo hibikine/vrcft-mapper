@@ -35,6 +35,12 @@ namespace VRCFTMapper
 
     public enum EyeSide { Auto = 0, Left = 1, Right = 2 }
 
+    public enum FTOutputMode
+    {
+        Native = 0, // VRChat ネイティブ Face Tracking (アバターデスクリプタに書き出し。同期パラメータ不要)
+        Legacy = 1, // 従来: VRCFT の FT/v2 パラメータを同期し、アニメーターで変形
+    }
+
     /// <summary>目周りの調整 (視線の加工・寄り目防止・まぶた追従・揺らぎ)。</summary>
     [Serializable]
     public class EyeSettings
@@ -110,6 +116,9 @@ namespace VRCFTMapper
         [Tooltip("平滑化係数 (毎フレーム目標値へ近づく割合)。負値 = 全体設定を使用")]
         public float smoothing = -1f;
 
+        [Tooltip("ネイティブ出力で out が 0..1 を超えるとき、変形量を拡大したシェイプキーをビルド時に生成する")]
+        public bool overshootShape = true;
+
         [Tooltip("視線パラメータのとき、どちらの目の値を使うか (自動 = シェイプキー名の Left/Right)")]
         public EyeSide eyeSide = EyeSide.Auto;
 
@@ -132,6 +141,15 @@ namespace VRCFTMapper
         [Range(3, 33)] public int curveSamples = 17;
 
         public List<FTMapping> mappings = new List<FTMapping>();
+
+        // ---- 出力方式 ----
+        public FTOutputMode outputMode = FTOutputMode.Native;
+        [Tooltip("ネイティブ: FT / 表情モードを切り替えるメニューを追加 (同期 1bit)")]
+        public bool nativeToggle = true;
+        [Tooltip("ネイティブ: FT / 表情モード切替時に Blendshapes Set の重みが変わる速さ (大きいほど速い)")]
+        public float nativeLerpSpeed = 7f;
+        [Tooltip("ネイティブ: ベジエカーブを折れ線の式にするときの区間数")]
+        [Range(2, 16)] public int nativeCurveSegments = 8;
 
         // ---- ① トラッキング有効フラグ / メニュー ----
         [Tooltip("EyeTrackingActive / LipTrackingActive / ExpressionTrackingActive を宣言し、メニューにトグルを追加")]
@@ -173,7 +191,7 @@ namespace VRCFTMapper
         /// <summary>同期する視線パラメータ。</summary>
         public IEnumerable<string> GazeParams()
         {
-            if (gazeMode == GazeMode.None) yield break;
+            if (gazeMode == GazeMode.None || outputMode == FTOutputMode.Native) yield break;
             if (gazeCombined) { yield return "EyeX"; yield return "EyeY"; }
             else { yield return "EyeLeftX"; yield return "EyeRightX"; yield return "EyeY"; }
         }

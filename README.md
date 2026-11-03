@@ -4,7 +4,10 @@
 
 > **開発中です。まだリリースしていません。**
 
-VRCFaceTracking (v2 パラメータ) → シェイプキーの対応を Unity 上で設定し、ビルド時に非破壊で FX レイヤーと同期パラメータを生成するエディタ拡張です。
+VRChat のフェイストラッキングで動かすシェイプキーの対応を Unity 上で設定し、ビルド時に非破壊で組み込むエディタ拡張です。
+
+- **ネイティブ出力 (既定)**: VRChat 2026.4 の Face Tracking (アバターデスクリプタ) に書き出します。表情データは同期パラメータを使いません。
+- **従来出力**: VRCFaceTracking の v2 パラメータを同期し、アニメーターで変形します。
 
 ## 導入
 リリース後は VCC (VRChat Creator Companion) から追加できる予定です。
@@ -72,3 +75,21 @@ Undo/Redo: マッピング・範囲・カーブ・自動設定・追加/削除�
 
 ## ライセンス
 [MIT License](LICENSE)
+
+
+## ネイティブ出力 (VRChat Face Tracking)
+上部ツールバーの「出力」で切り替えます (既定: ネイティブ)。必要: VRChat SDK Avatars 3.10.6 以降。
+
+| マッピングの内容 | 書き出し先 |
+|---|---|
+| 単一キー・0 始まり・最大 1 (または生成シェイプで 1 に正規化) | Blendshapes Set (倍率) |
+| 範囲・反転・カーブ・簡易パラメータ (SmileFrown など)・同じシェイプへの複数マッピング | Parameter Behavior (Apply to Blendshape + Custom 式) |
+| out が 0..1 の範囲外 | 変形量を拡大 / 反転したシェイプキー (`VRCFTM/<名前>*<倍率>`) をビルド時にメッシュの複製へ生成 |
+| まぶた追従 | 式でまばたきシェイプに加算 |
+| 目ボーンの加工 (寄り目制限・カーブ・揺らぎ) | 視線 2〜3 値だけ Forward to Animator し、Additive で処理 |
+
+- 各マッピングの行に変換結果 (● 直結 / ƒ 式 / ✕ 不可) を表示。左下に Face Tracking Operations / Forwarded Parameters のランク予測と式の命令数 (上限 2048) を表示します。
+- 有効判定は VRChat 標準の `UserEyeTracking` / `UserFaceTracking`。メニューの「Face Tracking」トグル (同期 1bit) で FT / 手動表情を切替え、Blendshapes Set の重みを 0/1 にします。
+- カーブの式が上限 (1024 文字 / 256 命令) を超える場合は区間数を自動で減らします。
+- 簡易パラメータ (EyeLid, SmileFrown など) は Unified Expressions のキーの式で近似します。パラメータ選択メニューの「ネイティブキー」から 102 キーを直接選ぶこともできます。
+- 注意: VRChat 側の「マイクミュート時にアイトラッキング / フェイストラッキングを無効化」が ON だと、ミュート中は止まります。

@@ -28,7 +28,7 @@ namespace VRCFTMapper.Editor
     /// Additive:
     ///   VRCFT Gaze          … 目ボーン (マッスル)
     /// </summary>
-    public class VRCFTMapperPlugin : Plugin<VRCFTMapperPlugin>
+    public partial class VRCFTMapperPlugin : Plugin<VRCFTMapperPlugin>
     {
         public override string QualifiedName => "works.hikage.vrcft-mapper";
         public override string DisplayName => "VRCFT Mapper";
@@ -180,6 +180,7 @@ namespace VRCFTMapper.Editor
 
         public static void Generate(BuildContext ctx, VRCFTMapper mapper)
         {
+            if (mapper.outputMode == FTOutputMode.Native) { GenerateNative(ctx, mapper); return; }
             var root = ctx.AvatarRootTransform;
             var maps = mapper.mappings.Where(m => m.enabled && m.renderer != null && !string.IsNullOrEmpty(m.blendShape)).ToList();
             var gazeParams = mapper.GazeParams().ToList();
@@ -485,15 +486,16 @@ namespace VRCFTMapper.Editor
         // ===== 目の加工パイプライン =====
         // AAP はプレイアブルレイヤー (FX / Additive) 間で共有されないので、必要なコントローラごとに同じものを生成する。
         // 各段は別レイヤー (AAP は次のレイヤーで読める) → 合計で数フレームの遅れがある。
-        static (string l, string r, string y) EyePipeline(Gen g, VRCFTMapper mapper)
+        static (string l, string r, string y) EyePipeline(Gen g, VRCFTMapper mapper, System.Func<string, string> raw = null)
         {
             var e = mapper.eye;
             bool comb = mapper.gazeCombined;
             string P(string n) => "VRCFTM/Eye/" + n;
 
-            string rl = mapper.FullName(comb ? "EyeX" : "EyeLeftX");
-            string rr = mapper.FullName(comb ? "EyeX" : "EyeRightX");
-            string ry = mapper.FullName("EyeY");
+            string Raw(string p) => raw != null ? raw(p) : mapper.FullName(p);
+            string rl = Raw(comb ? "EyeX" : "EyeLeftX");
+            string rr = Raw(comb ? "EyeX" : "EyeRightX");
+            string ry = Raw("EyeY");
             g.Decl(One, 1); g.Decl(rl); g.Decl(rr); g.Decl(ry);
 
             // 1) 平滑化
@@ -628,15 +630,18 @@ namespace VRCFTMapper.Editor
         }
 
         // ===== 目ボーン (Additive, マッスル) =====
-        static void BuildGaze(BuildContext ctx, VRCFTMapper mapper, GameObject parent)
+        static void BuildGaze(BuildContext ctx, VRCFTMapper mapper, GameObject parent,
+            System.Func<string, string> raw = null, string gate = null, System.Action<Gen> prelude = null)
         {
+            gate = gate ?? EyeActive;
             var anim = ctx.AvatarRootObject.GetComponent<Animator>();
             var ctrl = new AnimatorController { name = "VRCFT Gaze (generated)" };
             Save(ctx, ctrl);
             var g = new Gen { ctx = ctx, ctrl = ctrl };
             g.Decl(One, 1);
-            g.Decl(EyeActive);
-            var (ol, orr, oy) = EyePipeline(g, mapper);
+            g.Decl(gate);
+            prelude?.Invoke(g);
+            var (ol, orr, oy) = EyePipeline(g, mapper, raw);
 
             // 加算の基準ポーズ = マッスル 0
             var zero = new AnimationClip { name = "Gaze Zero" };
@@ -668,10 +673,10 @@ namespace VRCFTMapper.Editor
             }
 
             var tree = g.Direct("Gaze");
-            g.Child(tree, Axis(ol, GazeTools.LeftInOut, x => GazeTools.YawAngle(mapper, true, x)), EyeActive);
-            g.Child(tree, Axis(orr, GazeTools.RightInOut, x => GazeTools.YawAngle(mapper, false, x)), EyeActive);
-            g.Child(tree, Axis(oy, GazeTools.LeftDownUp, v => GazeTools.PitchAngle(mapper, v)), EyeActive);
-            g.Child(tree, Axis(oy, GazeTools.RightDownUp, v => GazeTools.PitchAngle(mapper, v)), EyeActive);
+            g.Child(tree, Axis(ol, GazeTools.LeftInOut, x => GazeTools.YawAngle(mapper, true, x)), gate);
+            g.Child(tree, Axis(orr, GazeTools.RightInOut, x => GazeTools.YawAngle(mapper, false, x)), gate);
+            g.Child(tree, Axis(oy, GazeTools.LeftDownUp, v => GazeTools.PitchAngle(mapper, v)), gate);
+            g.Child(tree, Axis(oy, GazeTools.RightDownUp, v => GazeTools.PitchAngle(mapper, v)), gate);
             g.Layer("VRCFT Gaze", tree);
 
             var child = new GameObject("VRCFT Gaze (generated)");
