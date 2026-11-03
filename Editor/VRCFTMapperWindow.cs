@@ -698,6 +698,20 @@ namespace VRCFTMapper.Editor
         void DrawRight()
         {
             rightTab = GUILayout.Toolbar(rightTab, new[] { "表情マッピング", "目・視線" }, GUILayout.Height(22));
+            int broken = RefRepair.BrokenCount(mapper);
+            if (broken > 0)
+                using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox))
+                {
+                    GUILayout.Label(EditorGUIUtility.IconContent("console.warnicon"), GUILayout.Width(32));
+                    GUILayout.Label($"{broken} 件のメッシュ参照が外れています (コンポーネントのコピーやプレハブ化で起きます)。このままではプレビューもビルドもシェイプキーが動きません。", EditorStyles.wordWrappedLabel);
+                    if (GUILayout.Button("シェイプキー名から修復", GUILayout.Width(150), GUILayout.Height(32)))
+                    {
+                        Undo.RecordObject(mapper, "メッシュ参照の修復");
+                        var (n, miss) = RefRepair.Repair(mapper, avatar.gameObject);
+                        Dirty(); ApplyPreview();
+                        ShowNotification(new GUIContent(miss.Count == 0 ? $"{n} 件を修復しました" : $"{n} 件を修復 / 見つからない: {string.Join(", ", miss.Distinct().Take(5))}"));
+                    }
+                }
             if (rightTab == 1) { DrawEyeTab(); return; }
             using (new EditorGUILayout.HorizontalScope())
             {
