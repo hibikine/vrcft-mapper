@@ -725,22 +725,15 @@ namespace VRCFTMapper.Editor
             using (new EditorGUILayout.HorizontalScope())
             {
                 filter = EditorGUILayout.TextField(filter, EditorStyles.toolbarSearchField);
-                if (GUILayout.Button("全展開", EditorStyles.miniButtonLeft, GUILayout.Width(50))) for (int i = 0; i < mapper.mappings.Count; i++) foldout.Add(i);
-                if (GUILayout.Button("全閉", EditorStyles.miniButtonRight, GUILayout.Width(40))) foldout.Clear();
+                if (GUILayout.Button("全展開", EditorStyles.miniButtonLeft, GUILayout.Width(50))) { for (int i = 0; i < mapper.mappings.Count; i++) foldout.Add(i); groupOpen.UnionWith(AllGroupKeys()); }
+                if (GUILayout.Button("全閉", EditorStyles.miniButtonRight, GUILayout.Width(40))) { foldout.Clear(); groupOpen.Clear(); }
                 if (GUILayout.Button("入力リセット", EditorStyles.miniButton, GUILayout.Width(70))) { manual.Clear(); ApplyPreview(); }
             }
 
             using (var s = new EditorGUILayout.ScrollViewScope(scroll))
             {
                 scroll = s.scrollPosition;
-                for (int i = 0; i < mapper.mappings.Count; i++)
-                {
-                    var m = mapper.mappings[i];
-                    if (!string.IsNullOrEmpty(filter) &&
-                        !(m.parameter ?? "").ToLowerInvariant().Contains(filter.ToLowerInvariant()) &&
-                        !(m.blendShape ?? "").ToLowerInvariant().Contains(filter.ToLowerInvariant())) continue;
-                    if (DrawMapping(i, m)) break; // 削除時
-                }
+                DrawGroups();
                 EditorGUILayout.Space();
                 DrawStyleGroup();
                 DrawSplits();
@@ -751,7 +744,7 @@ namespace VRCFTMapper.Editor
         void ShowResult(int n)
         {
             ShowNotification(new GUIContent($"{n} 件のマッピングを設定しました"));
-            for (int i = 0; i < mapper.mappings.Count; i++) foldout.Add(i);
+            groupOpen.UnionWith(AllGroupKeys());
             ApplyPreview();
         }
 
@@ -770,6 +763,11 @@ namespace VRCFTMapper.Editor
                     bool nopen = EditorGUILayout.Foldout(open, "", true);
                     if (nopen != open) { if (nopen) foldout.Add(i); else foldout.Remove(i); }
                     GUILayout.Space(-38);
+                    if (rowSwatch.HasValue)
+                    {
+                        var sw = GUILayoutUtility.GetRect(6, 16, GUILayout.Width(6));
+                        EditorGUI.DrawRect(new Rect(sw.x, sw.y + 2, 6, 12), rowSwatch.Value);
+                    }
 
                     EditorGUI.BeginChangeCheck();
                     bool en = EditorGUILayout.Toggle(m.enabled, GUILayout.Width(16));
