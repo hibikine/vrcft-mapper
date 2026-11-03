@@ -62,7 +62,9 @@ namespace VRCFTMapper.Editor
             foreach (var k in order)
             {
                 var idx = byKey[k];
-                if (idx.Count == 1 && k != ExprGroup) { rowSwatch = null; if (DrawRowTracked(idx[0])) return; }
+                var leftOf = MirrorTools.Counterpart(k);
+                if (leftOf != null && mapper.mirrored.Contains(leftOf)) { DrawMirroredStub(k, leftOf, idx.Count); continue; }
+                if (idx.Count == 1 && k != ExprGroup && !CanMirror(k)) { rowSwatch = null; if (DrawRowTracked(idx[0])) return; }
                 else if (DrawGroup(k, idx)) return;
             }
             rowSwatch = null;
@@ -96,6 +98,12 @@ namespace VRCFTMapper.Editor
                     bool nopen = EditorGUILayout.Foldout(open, new GUIContent(key, spec != null ? spec.label : isExpr ? "式を入力にするマッピング" : "カタログ外の名前"), true, EditorStyles.foldoutHeader);
                     if (nopen != open) { if (nopen) groupOpen.Add(key); else groupOpen.Remove(key); }
                     GUILayout.FlexibleSpace();
+                    if (CanMirror(key))
+                    {
+                        bool on = mapper.mirrored.Contains(key);
+                        bool non = GUILayout.Toggle(on, new GUIContent("⇆ 左右対称", $"{MirrorTools.Counterpart(key)} をこの設定から自動生成 (シェイプキー名の Left/Right も入れ替え)"), EditorStyles.miniButton, GUILayout.Width(70));
+                        if (non != on) SetMirror(key, non);
+                    }
                     var dots = string.Concat(ms.Select(m => m.enabled ? "●" : "○"));
                     GUILayout.Label(new GUIContent($"{dots} {ms.Count}件", "有効 ● / 無効 ○"), EditorStyles.miniLabel);
                     if (!isExpr) GUILayout.Label($"{ms.Max(FTMath.SyncBits)}bit", EditorStyles.miniLabel, GUILayout.Width(30));
@@ -164,6 +172,47 @@ namespace VRCFTMapper.Editor
                 rowSwatch = null;
             }
             return false;
+        }
+
+        // ---- 左右対称 ----
+        bool CanMirror(string key)
+        {
+            if (!MirrorTools.IsLeftParam(key)) return false;
+            var r = MirrorTools.Counterpart(key);
+            return FTCatalog.Find(r) != null || NativeKeys.All.Contains(r) || mapper.mappings.Any(m => m.parameter == r);
+        }
+
+        void SetMirror(string left, bool on)
+        {
+            var right = MirrorTools.Counterpart(left);
+            if (on && mapper.mappings.Any(m => !m.useExpression && m.parameter == right) &&
+                !EditorUtility.DisplayDialog("左右対称", $"{right} の設定を {left} の鏡像で置き換えます (Undo 可能)。", "OK", "キャンセル")) return;
+            Undo.RecordObject(mapper, on ? "左右対称を有効化" : "左右対称を解除");
+            if (on) { if (!mapper.mirrored.Contains(left)) mapper.mirrored.Add(left); }
+            else mapper.mirrored.Remove(left);
+            Dirty(); ApplyPreview();
+        }
+
+        void MirrorAll()
+        {
+            var keys = mapper.mappings.Where(m => !m.useExpression).Select(m => m.parameter).Distinct().Where(CanMirror).Where(k => !mapper.mirrored.Contains(k)).ToList();
+            if (keys.Count == 0) { ShowNotification(new GUIContent("対称にできる Left パラメータはありません")); return; }
+            if (!EditorUtility.DisplayDialog("左右対称", $"{keys.Count} 組を左右対称にします。Right 側は Left 側の鏡像で置き換えます (Undo 可能)。\n\n" + string.Join(", ", keys), "OK", "キャンセル")) return;
+            Undo.RecordObject(mapper, "左右対称を一括設定");
+            mapper.mirrored.AddRange(keys);
+            Dirty(); ApplyPreview();
+        }
+
+        void DrawMirroredStub(string right, string left, int count)
+        {
+            using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox))
+            {
+                GUILayout.Label(right, EditorStyles.boldLabel, GUILayout.Width(180));
+                GUILayout.Label($"⇆ {left} と左右対称 ({count} 件、自動生成)", EditorStyles.miniLabel);
+                GUILayout.FlexibleSpace();
+                if (GUILayout.Button(new GUIContent("解除", "対称をやめて個別に編集する (今の設定は残ります)"), EditorStyles.miniButton, GUILayout.Width(40)))
+                    SetMirror(left, false);
+            }
         }
 
         // ------------------------------------------------------------

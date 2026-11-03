@@ -235,6 +235,8 @@ namespace VRCFTMapper
         public List<FTLimit> limits = new List<FTLimit>();
         public FTStyleGroup styleGroup = new FTStyleGroup();
         public List<FTSplit> splits = new List<FTSplit>();
+        [Tooltip("左右対称: ここにある Left 側パラメータの設定を Right 側へ自動でコピーする")]
+        public List<string> mirrored = new List<string>();
 
         /// <summary>視線として扱うパラメータ名 (マッピングの通常処理から除外し、目の加工後の値を使う)。</summary>
         public static readonly HashSet<string> GazeNames = new HashSet<string>
