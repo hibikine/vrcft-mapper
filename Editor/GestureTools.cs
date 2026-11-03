@@ -140,6 +140,32 @@ namespace VRCFTMapper.Editor
 
         // ---------------- 注入 (MA マージ後の最終 FX) ----------------
 
+        /// <summary>
+        /// Eye / Lip の切替レイヤーの On/Off ステートに、対応する Mapping レイヤーの重みを 1/0 にする Layer Control を追加。
+        /// レイヤー番号は MA のマージ後でないと確定しないので、この段階で行う。
+        /// </summary>
+        public static void InjectMappingWeights(VRCFTMapper mapper, AnimatorController fx)
+        {
+            if (fx == null) return;
+            var layers = fx.layers;
+            void Link(string control, string target)
+            {
+                int c = System.Array.FindIndex(layers, l => l.name == control);
+                int t = System.Array.FindIndex(layers, l => l.name == target);
+                if (c < 0 || t < 0) return;
+                foreach (var cs in layers[c].stateMachine.states)
+                {
+                    var lc = cs.state.AddStateMachineBehaviour<VRC.SDK3.Avatars.Components.VRCAnimatorLayerControl>();
+                    lc.playable = VRC.SDKBase.VRC_AnimatorLayerControl.BlendableLayer.FX;
+                    lc.layer = t;
+                    lc.goalWeight = cs.state.name == "On" ? 1 : 0;
+                    lc.blendDuration = 0.1f;
+                }
+            }
+            Link(BuildNames.EyeControlLayer, BuildNames.EyeMappingLayer);
+            Link(BuildNames.LipControlLayer, BuildNames.LipMappingLayer);
+        }
+
         public static void Inject(VRCFTMapper mapper, AnimatorController fx, Transform root)
         {
             if (fx == null || mapper.gestureMode == GestureDisableMode.None) return;
@@ -197,5 +223,9 @@ namespace VRCFTMapper.Editor
     public static class BuildNames
     {
         public const string GestureControlLayer = "VRCFT Gesture Control";
+        public const string EyeControlLayer = "VRCFT Eye Control";
+        public const string LipControlLayer = "VRCFT Lip Control";
+        public const string EyeMappingLayer = "VRCFT Mapping (Eye)";
+        public const string LipMappingLayer = "VRCFT Mapping (Lip)";
     }
 }

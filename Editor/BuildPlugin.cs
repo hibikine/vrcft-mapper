@@ -54,6 +54,7 @@ namespace VRCFTMapper.Editor
                             .Where(l => l.type == VRCAvatarDescriptor.AnimLayerType.FX)
                             .Select(l => l.animatorController as AnimatorController)
                             .FirstOrDefault();
+                        GestureTools.InjectMappingWeights(mapper, fx);
                         GestureTools.Inject(mapper, fx, ctx.AvatarRootTransform);
                         Object.DestroyImmediate(mapper);
                     }
@@ -161,6 +162,13 @@ namespace VRCFTMapper.Editor
                 return sm;
             }
 
+            public void SetLastLayerWeight(float w)
+            {
+                var ls = ctrl.layers;
+                ls[ls.Length - 1].defaultWeight = w;
+                ctrl.layers = ls;
+            }
+
             public AnimationClip Empty()
             {
                 var c = new AnimationClip { name = "VRCFT Empty" };
@@ -202,22 +210,22 @@ namespace VRCFTMapper.Editor
             }
             g.Layer("VRCFT Gate", gate);
 
-            // ===== ③ Tracking Control =====
-            if (mapper.trackingControl)
+            // ===== ①③ 有効フラグの切替レイヤー =====
+            // On/Off ステートに、③ Tracking Control (任意) と、Mapping レイヤーの重み制御 (後段で Layer Control を注入) を載せる
+            var hasEye = maps.Any(m => GateOf(m) == FTGate.Eye) || gazeParams.Count > 0;
+            var hasLip = maps.Any(m => GateOf(m) == FTGate.Lip);
+            if (hasEye) ToggleLayer(g, BuildNames.EyeControlLayer, EyeActive, (st, on) =>
             {
-                var hasEye = maps.Any(m => GateOf(m) == FTGate.Eye) || gazeParams.Count > 0;
-                var hasLip = maps.Any(m => GateOf(m) == FTGate.Lip);
-                if (hasEye) ToggleLayer(g, "VRCFT Eye Control", EyeActive, (st, on) =>
-                {
-                    var tc = st.AddStateMachineBehaviour<VRCAnimatorTrackingControl>();
-                    tc.trackingEyes = on ? VRC_AnimatorTrackingControl.TrackingType.Animation : VRC_AnimatorTrackingControl.TrackingType.Tracking;
-                });
-                if (hasLip) ToggleLayer(g, "VRCFT Lip Control", LipActive, (st, on) =>
-                {
-                    var tc = st.AddStateMachineBehaviour<VRCAnimatorTrackingControl>();
-                    tc.trackingMouth = on ? VRC_AnimatorTrackingControl.TrackingType.Animation : VRC_AnimatorTrackingControl.TrackingType.Tracking;
-                });
-            }
+                if (!mapper.trackingControl) return;
+                var tc = st.AddStateMachineBehaviour<VRCAnimatorTrackingControl>();
+                tc.trackingEyes = on ? VRC_AnimatorTrackingControl.TrackingType.Animation : VRC_AnimatorTrackingControl.TrackingType.Tracking;
+            });
+            if (hasLip) ToggleLayer(g, BuildNames.LipControlLayer, LipActive, (st, on) =>
+            {
+                if (!mapper.trackingControl) return;
+                var tc = st.AddStateMachineBehaviour<VRCAnimatorTrackingControl>();
+                tc.trackingMouth = on ? VRC_AnimatorTrackingControl.TrackingType.Animation : VRC_AnimatorTrackingControl.TrackingType.Tracking;
+            });
 
             // ===== ② Gesture Control (FacialExpressionsDisabled) =====
             if (mapper.gestureMode != GestureDisableMode.None)
@@ -340,7 +348,13 @@ namespace VRCFTMapper.Editor
             // ===== Mapping =====
             if (maps.Count > 0 || lidFollow)
             {
+                // WD ON のブレンドツリーは子の重みが 0 でも既定値を書き込み、前のレイヤー (リップシンク・ジェスチャー表情) を
+                // 上書きしてしまう。そのため有効フラグごとにレイヤーを分け、レイヤーの重み (Layer Control) で ON/OFF する。
+                var eyeTree = g.Direct("Mapping (Eye)");
+                var lipTree = g.Direct("Mapping (Lip)");
                 var mapTree = g.Direct("Mapping");
+                BlendTree TreeFor(FTMapping fm) => VRCFTMapper.IsGaze(fm.parameter) || GateOf(fm) == FTGate.Eye ? eyeTree
+                                                 : GateOf(fm) == FTGate.Lip ? lipTree : mapTree;
                 foreach (var m in maps)
                 {
                     string inParam = !VRCFTMapper.IsGaze(m.parameter) ? input[m.parameter]
@@ -366,7 +380,7 @@ namespace VRCFTMapper.Editor
                         bt.AddChild(clip, x);
                     }
                     // ① トラッキング無効時は重み 0 → 出力しない (WD でデフォルト値)
-                    g.Child(mapTree, bt, VRCFTMapper.IsGaze(m.parameter) ? EyeActive : GateParam(m));
+                    g.Child(TreeFor(m), bt, One);
                 }
                 if (lidFollow)
                 {
@@ -378,10 +392,12 @@ namespace VRCFTMapper.Editor
                         if (string.IsNullOrEmpty(down) && string.IsNullOrEmpty(up)) continue;
                         string lidIn = input.ContainsKey(left ? "EyeLidLeft" : "EyeLidRight") ? input[left ? "EyeLidLeft" : "EyeLidRight"]
                                      : input.ContainsKey("EyeLid") ? input["EyeLid"] : null;
-                        g.Child(mapTree, LidTree(ctx, eye, lidPath, down, up, eyeOut.y, lidIn), EyeActive);
+                        g.Child(eyeTree, LidTree(ctx, eye, lidPath, down, up, eyeOut.y, lidIn), One);
                     }
                 }
-                g.Layer("VRCFT Mapping", mapTree);
+                if (eyeTree.children.Length > 0) { g.Layer(BuildNames.EyeMappingLayer, eyeTree); g.SetLastLayerWeight(0); }
+                if (lipTree.children.Length > 0) { g.Layer(BuildNames.LipMappingLayer, lipTree); g.SetLastLayerWeight(0); }
+                if (mapTree.children.Length > 0) g.Layer("VRCFT Mapping", mapTree);
             }
 
             // ===== Modular Avatar =====
