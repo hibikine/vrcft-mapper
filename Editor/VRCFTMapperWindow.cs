@@ -728,6 +728,8 @@ namespace VRCFTMapper.Editor
                 if (GUILayout.Button("全展開", EditorStyles.miniButtonLeft, GUILayout.Width(50))) { for (int i = 0; i < mapper.mappings.Count; i++) foldout.Add(i); groupOpen.UnionWith(AllGroupKeys()); }
                 if (GUILayout.Button("全閉", EditorStyles.miniButtonRight, GUILayout.Width(40))) { foldout.Clear(); groupOpen.Clear(); }
                 if (GUILayout.Button("入力リセット", EditorStyles.miniButton, GUILayout.Width(70))) { manual.Clear(); ApplyPreview(); }
+                if (GUILayout.Button(new GUIContent("⇆ 全て対称", "Left/Right の組をすべて左右対称にする (Right 側は Left 側の設定で上書き)"), EditorStyles.miniButton, GUILayout.Width(70)))
+                    MirrorAll();
             }
 
             using (var s = new EditorGUILayout.ScrollViewScope(scroll))
@@ -1055,6 +1057,7 @@ namespace VRCFTMapper.Editor
 
         void Dirty()
         {
+            MirrorTools.SyncAll(mapper);
             EditorUtility.SetDirty(mapper);
             PrefabUtility.RecordPrefabInstancePropertyModifications(mapper);
             Repaint();
