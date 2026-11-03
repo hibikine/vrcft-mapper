@@ -40,7 +40,14 @@ namespace VRCFTMapper.Editor
                 .Run("Generate VRCFT animator", ctx =>
                 {
                     foreach (var mapper in ctx.AvatarRootObject.GetComponentsInChildren<VRCFTMapper>(true))
+                    {
+                        if (RefRepair.BrokenCount(mapper) > 0)
+                        {
+                            var (n, miss) = RefRepair.Repair(mapper, ctx.AvatarRootObject); // ビルド用コピーのみ
+                            Debug.LogWarning($"[VRCFT Mapper] {mapper.name}: メッシュ参照が外れていたため {n} 件を名前から補いました" + (miss.Count > 0 ? " / 見つからない: " + string.Join(", ", miss.Distinct()) : "") + "。VRCFT Mapper ウィンドウで修復してください。");
+                        }
                         Generate(ctx, mapper);
+                    }
                 });
 
             // MA のマージ・アニメーターの確定後に、最終 FX のジェスチャーレイヤーへ注入
