@@ -7,7 +7,91 @@ namespace VRCFTMapper.Editor
     /// <summary>「左右分離シェイプキー」と「上限・下限」の編集欄。</summary>
     public partial class VRCFTMapperWindow
     {
-        bool showSplits = true, showLimits = true;
+        bool showSplits = true, showLimits = true, showStyle = true;
+        int previewStyle;          // 0 = 自動, k+1 = 選択肢 k
+        float previewStyleAuto;    // 自動のときの式の値 (プレビュー用)
+
+        /// <summary>プレビューでのスタイルの重み (ビルド後のアニメーターと同じ 1D 補間)。</summary>
+        float StyleWeightPreview(FTMapping m)
+        {
+            var g = mapper.styleGroup;
+            if (!g.enabled || m.style <= 0) return 1;
+            int opt = m.style - 1;
+            if (previewStyle > 0 || !g.auto) return opt == Mathf.Max(0, previewStyle - 1) ? 1 : 0;
+            var pts = Enumerable.Range(0, g.options.Count).Where(k => k < g.autoValues.Count && !float.IsNaN(g.autoValues[k])).OrderBy(k => g.autoValues[k]).ToList();
+            if (pts.Count == 0) return 0;
+            float x = previewStyleAuto;
+            if (x <= g.autoValues[pts[0]]) return opt == pts[0] ? 1 : 0;
+            if (x >= g.autoValues[pts[pts.Count - 1]]) return opt == pts[pts.Count - 1] ? 1 : 0;
+            for (int i = 0; i < pts.Count - 1; i++)
+            {
+                float a = g.autoValues[pts[i]], b = g.autoValues[pts[i + 1]];
+                if (x < a || x > b) continue;
+                float t = Mathf.InverseLerp(a, b, x);
+                return opt == pts[i] ? 1 - t : opt == pts[i + 1] ? t : 0;
+            }
+            return 0;
+        }
+
+        void DrawStyleGroup()
+        {
+            var g = mapper.styleGroup;
+            showStyle = EditorGUILayout.Foldout(showStyle, "スタイル切替 (メニューで選択)", true, EditorStyles.foldoutHeader);
+            if (!showStyle) return;
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            {
+                EditorGUILayout.LabelField("マッピングを選択肢ごとにまとめ、メニューで切り替えます (アニメーター経由。入力の転送が増えます)。各マッピングの「スタイル」で所属を指定します。", EditorStyles.wordWrappedMiniLabel);
+                var so = new SerializedObject(mapper);
+                so.Update();
+                var sp = so.FindProperty("styleGroup");
+                EditorGUILayout.PropertyField(sp.FindPropertyRelative("enabled"), new GUIContent("有効"));
+                if (g.enabled)
+                {
+                    EditorGUILayout.PropertyField(sp.FindPropertyRelative("name"), new GUIContent("メニュー名"));
+                    EditorGUILayout.PropertyField(sp.FindPropertyRelative("transition"), new GUIContent("切替時間 (秒)"));
+                    EditorGUILayout.PropertyField(sp.FindPropertyRelative("auto"), new GUIContent("「自動」を付ける"));
+                    if (g.auto) EditorGUILayout.PropertyField(sp.FindPropertyRelative("autoExpression"), new GUIContent("自動の式 (-1..1)"));
+                }
+                if (so.ApplyModifiedProperties()) { Dirty(); ApplyPreview(); }
+                if (!g.enabled) return;
+
+                for (int i = 0; i < g.options.Count; i++)
+                {
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        EditorGUI.BeginChangeCheck();
+                        string name = EditorGUILayout.DelayedTextField(g.options[i], GUILayout.Width(120));
+                        while (g.autoValues.Count < g.options.Count) g.autoValues.Add(0);
+                        float av = g.autoValues[i];
+                        if (g.auto) { GUILayout.Label("自動の値", GUILayout.Width(52)); av = EditorGUILayout.FloatField(av, GUILayout.Width(50)); }
+                        GUILayout.Label($"{mapper.mappings.Count(x => x.style == i + 1)} 件", EditorStyles.miniLabel, GUILayout.Width(40));
+                        if (EditorGUI.EndChangeCheck()) { Undo.RecordObject(mapper, "スタイルの変更"); g.options[i] = name; g.autoValues[i] = av; Dirty(); ApplyPreview(); }
+                        GUILayout.FlexibleSpace();
+                        if (GUILayout.Button("✕", EditorStyles.miniButton, GUILayout.Width(22)))
+                        {
+                            Undo.RecordObject(mapper, "スタイルの削除");
+                            g.options.RemoveAt(i); if (i < g.autoValues.Count) g.autoValues.RemoveAt(i);
+                            foreach (var m in mapper.mappings) { if (m.style == i + 1) m.style = 0; else if (m.style > i + 1) m.style--; }
+                            Dirty(); ApplyPreview(); break;
+                        }
+                    }
+                }
+                if (GUILayout.Button("＋ 選択肢を追加", EditorStyles.miniButton))
+                {
+                    Undo.RecordObject(mapper, "スタイルの追加");
+                    g.options.Add("選択肢" + (g.options.Count + 1)); g.autoValues.Add(0);
+                    Dirty();
+                }
+
+                // プレビューでの選択
+                EditorGUI.BeginChangeCheck();
+                var labels = (g.auto ? new[] { "自動" } : new string[0]).Concat(g.options).ToArray();
+                int idx = EditorGUILayout.Popup("プレビュー", g.auto ? previewStyle : Mathf.Max(0, previewStyle - 1), labels);
+                previewStyle = g.auto ? idx : idx + 1;
+                if (g.auto && previewStyle == 0) previewStyleAuto = EditorGUILayout.Slider("自動の式の値", previewStyleAuto, -1, 1);
+                if (EditorGUI.EndChangeCheck()) ApplyPreview();
+            }
+        }
 
         void DrawSplits()
         {

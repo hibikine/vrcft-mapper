@@ -231,7 +231,7 @@ namespace VRCFTMapper.Editor
                 if (!Gated(m)) continue; // トラッキング無効 → 出力しない (元の値)
                 var key = (m.renderer, m.blendShape);
                 w.TryGetValue(key, out var cur);
-                w[key] = cur + FTMath.Evaluate(m, InputFor(m, out _)) * 100f;
+                w[key] = cur + FTMath.Evaluate(m, InputFor(m, out _)) * 100f * StyleWeightPreview(m);
             }
             // まぶた追従 (実機の Lid Follow ツリーと同じ計算)
             var e = mapper.eye;
@@ -742,6 +742,7 @@ namespace VRCFTMapper.Editor
                     if (DrawMapping(i, m)) break; // 削除時
                 }
                 EditorGUILayout.Space();
+                DrawStyleGroup();
                 DrawSplits();
                 DrawLimits();
             }
@@ -880,6 +881,12 @@ namespace VRCFTMapper.Editor
                         var side = (EyeSide)EditorGUILayout.Popup((int)m.eyeSide,
                             new[] { $"自動 ({(EyeMath.IsLeft(m) ? "左" : "右")})", "左", "右" }, GUILayout.Width(70));
                         if (side != m.eyeSide) { Undo.RecordObject(mapper, "使う目の変更"); m.eyeSide = side; Dirty(); ApplyPreview(); }
+                    }
+                    if (mapper.styleGroup.enabled)
+                    {
+                        var opts = new[] { "スタイル: 常に" }.Concat(mapper.styleGroup.options.Select(o => "スタイル: " + o)).ToArray();
+                        int sel = EditorGUILayout.Popup(Mathf.Clamp(m.style, 0, opts.Length - 1), opts, GUILayout.Width(110));
+                        if (sel != m.style) { Undo.RecordObject(mapper, "スタイルの変更"); m.style = sel; Dirty(); ApplyPreview(); }
                     }
                     GUILayout.Label(new GUIContent("有効フラグ", "どのトラッキング有効フラグで ON/OFF するか"), GUILayout.Width(60));
                     var autoG = FTCatalog.AutoGate(m.parameter);

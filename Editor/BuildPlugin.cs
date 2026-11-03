@@ -86,7 +86,7 @@ namespace VRCFTMapper.Editor
             public void Decl(string n, float def = 0, AnimatorControllerParameterType t = AnimatorControllerParameterType.Float)
             {
                 if (!declared.Add(n)) return;
-                ctrl.AddParameter(new AnimatorControllerParameter { name = n, type = t, defaultFloat = def, defaultBool = def > 0.5f });
+                ctrl.AddParameter(new AnimatorControllerParameter { name = n, type = t, defaultFloat = def, defaultBool = def > 0.5f, defaultInt = Mathf.RoundToInt(def) });
             }
 
             public BlendTree Direct(string name)

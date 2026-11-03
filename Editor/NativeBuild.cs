@@ -147,23 +147,121 @@ namespace VRCFTMapper.Editor
             if (mapper.gestureMode != GestureDisableMode.None)
                 maParams.parameters.Add(new ParameterConfig { nameOrPrefix = GestureTools.DisabledParam, syncType = ParameterSyncType.NotSynced, localOnly = true });
 
-            if (mapper.generateTrackingMenu && mapper.nativeToggle)
+            BuildStyle(ctx, g, mapper, plan, maParams);
+
+            if (mapper.generateTrackingMenu)
             {
-                var menuGo = new GameObject(mapper.menuName);
-                menuGo.transform.SetParent(go.transform, false);
-                menuGo.AddComponent<ModularAvatarMenuInstaller>();
-                var mi = menuGo.AddComponent<ModularAvatarMenuItem>();
-                mi.Control = new VRCExpressionsMenu.Control
+                var grp = mapper.styleGroup;
+                bool style = grp.enabled && plan.animatorMappings.Count > 0;
+                if (mapper.nativeToggle || style)
                 {
-                    name = mapper.menuName, type = VRCExpressionsMenu.Control.ControlType.Toggle, value = 1,
-                    parameter = new VRCExpressionsMenu.Control.Parameter { name = NativeFT },
-                };
+                    var menuGo = new GameObject(mapper.menuName);
+                    menuGo.transform.SetParent(go.transform, false);
+                    menuGo.AddComponent<ModularAvatarMenuInstaller>();
+                    var rootItem = menuGo.AddComponent<ModularAvatarMenuItem>();
+                    rootItem.Control = new VRCExpressionsMenu.Control { name = mapper.menuName, type = VRCExpressionsMenu.Control.ControlType.SubMenu };
+                    rootItem.MenuSource = SubmenuSource.Children;
+                    void Toggle(Transform parent, string label, string param, float value)
+                    {
+                        var t = new GameObject(label);
+                        t.transform.SetParent(parent, false);
+                        t.AddComponent<ModularAvatarMenuItem>().Control = new VRCExpressionsMenu.Control
+                        {
+                            name = label, type = VRCExpressionsMenu.Control.ControlType.Toggle, value = value,
+                            parameter = new VRCExpressionsMenu.Control.Parameter { name = param },
+                        };
+                    }
+                    if (mapper.nativeToggle) Toggle(menuGo.transform, "Face Tracking", NativeFT, 1);
+                    if (style)
+                    {
+                        var sub = new GameObject(grp.name);
+                        sub.transform.SetParent(menuGo.transform, false);
+                        var si = sub.AddComponent<ModularAvatarMenuItem>();
+                        si.Control = new VRCExpressionsMenu.Control { name = grp.name, type = VRCExpressionsMenu.Control.ControlType.SubMenu };
+                        si.MenuSource = SubmenuSource.Children;
+                        if (grp.auto && plan.styleAutoParam != null) Toggle(sub.transform, "自動", NativePlan.StyleParam, 0);
+                        for (int k = 0; k < grp.options.Count; k++) Toggle(sub.transform, grp.options[k], NativePlan.StyleParam, k + 1);
+                    }
+                }
             }
 
             // 目ボーン: 転送した視線で Additive の加工パイプラインを動かす (AAP はレイヤー間で共有されないので有効判定も Additive 側に作る)
             if (boneGaze)
                 BuildGaze(ctx, mapper, go, p => NativePlan.ForwardPrefix + p, EyeOn,
                     gg => BoolGateLayer(gg, "VRCFT Eye Gate", eyeConds, EyeOn, null));
+        }
+
+        /// <summary>
+        /// スタイル切替: 選択中 (または自動) の選択肢の重み VRCFTM/StyleW/k を AAP で作り、
+        /// 「VRCFT Mapping (Eye)」レイヤーの Direct ツリーで各マッピングをその重みで動かす。
+        /// レイヤーの重みは Eye の有効判定から Layer Control で制御 (後段で注入)。
+        /// </summary>
+        static void BuildStyle(BuildContext ctx, Gen g, VRCFTMapper mapper, NativePlan plan, ModularAvatarParameters maParams)
+        {
+            if (plan.animatorMappings.Count == 0) return;
+            var grp = mapper.styleGroup;
+            int n = grp.options.Count;
+            bool auto = grp.auto && plan.styleAutoParam != null;
+            g.Decl(NativePlan.StyleParam, auto ? 0 : 1, AnimatorControllerParameterType.Int);
+            for (int k = 0; k < n; k++) g.Decl(NativePlan.StyleWeight(k));
+            if (auto) g.Decl(plan.styleAutoParam);
+
+            var sm = g.Layer("VRCFT Style");
+            AnimatorState Add(string name, Motion motion, int value)
+            {
+                var st = sm.AddState(name);
+                st.motion = motion; st.writeDefaultValues = true;
+                var t = sm.AddAnyStateTransition(st);
+                t.hasExitTime = false; t.duration = grp.transition; t.canTransitionToSelf = false;
+                t.AddCondition(AnimatorConditionMode.Equals, value, NativePlan.StyleParam);
+                return st;
+            }
+            AnimatorState first = null;
+            if (auto)
+            {
+                var bt = new BlendTree { name = "Style Auto", blendType = BlendTreeType.Simple1D, blendParameter = plan.styleAutoParam,
+                    useAutomaticThresholds = false, hideFlags = HideFlags.HideInHierarchy };
+                Save(ctx, bt);
+                var order = Enumerable.Range(0, n).Where(k => k < grp.autoValues.Count && !float.IsNaN(grp.autoValues[k]))
+                    .OrderBy(k => grp.autoValues[k]).ToList();
+                foreach (var k in order) bt.AddChild(g.Aap(NativePlan.StyleWeight(k), 1), grp.autoValues[k]);
+                first = Add("自動", bt, 0);
+            }
+            for (int k = 0; k < n; k++)
+            {
+                var st = Add(grp.options[k], g.Aap(NativePlan.StyleWeight(k), 1), k + 1);
+                if (first == null) first = st;
+            }
+            sm.defaultState = first;
+
+            var root = ctx.AvatarRootTransform;
+            var tree = g.Direct("Mapping (Eye)");
+            foreach (var am in plan.animatorMappings)
+            {
+                var m = am.m;
+                g.Decl(am.inputParam);
+                var path = AnimationUtility.CalculateTransformPath(m.renderer.transform, root);
+                var binding = EditorCurveBinding.FloatCurve(path, typeof(SkinnedMeshRenderer), "blendShape." + m.blendShape);
+                int samples = m.useCurve ? Mathf.Max(3, mapper.curveSamples) : 2;
+                float lo = Mathf.Min(m.inMin, m.inMax), hi = Mathf.Max(m.inMin, m.inMax);
+                if (hi - lo < 1e-4f) hi = lo + 1e-4f;
+                var bt = new BlendTree { name = m.blendShape + " ← " + am.inputParam, blendType = BlendTreeType.Simple1D,
+                    blendParameter = am.inputParam, useAutomaticThresholds = false, hideFlags = HideFlags.HideInHierarchy };
+                Save(ctx, bt);
+                for (int i = 0; i < samples; i++)
+                {
+                    float x = Mathf.Lerp(lo, hi, i / (float)(samples - 1));
+                    var clip = new AnimationClip { name = $"{m.blendShape}={FTMath.Evaluate(m, x):0.###}" };
+                    AnimationUtility.SetEditorCurve(clip, binding, AnimationCurve.Constant(0, 1f / 60f, FTMath.Evaluate(m, x) * 100f));
+                    Save(ctx, clip);
+                    bt.AddChild(clip, x);
+                }
+                g.Child(tree, bt, NativePlan.StyleWeight(m.style - 1));
+            }
+            g.Layer(BuildNames.EyeMappingLayer, tree);
+            g.SetLastLayerWeight(0);
+
+            maParams.parameters.Add(new ParameterConfig { nameOrPrefix = NativePlan.StyleParam, syncType = ParameterSyncType.Int, saved = true, defaultValue = auto ? 0 : 1 });
         }
 
         static Mesh MeshCopy(BuildContext ctx, SkinnedMeshRenderer r, Dictionary<SkinnedMeshRenderer, Mesh> copies)

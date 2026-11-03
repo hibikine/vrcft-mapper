@@ -123,6 +123,9 @@ namespace VRCFTMapper
         [Tooltip("ネイティブ出力で out が 0..1 を超えるとき、変形量を拡大したシェイプキーをビルド時に生成する")]
         public bool overshootShape = true;
 
+        [Tooltip("スタイル切替: このマッピングを有効にする選択肢 (0 = 常に有効, k = k 番目の選択肢)。指定するとアニメーター経由で動かす")]
+        public int style = 0;
+
         [Tooltip("視線パラメータのとき、どちらの目の値を使うか (自動 = シェイプキー名の Left/Right)")]
         public EyeSide eyeSide = EyeSide.Auto;
 
@@ -144,6 +147,26 @@ namespace VRCFTMapper
         public bool isMin = false;
         [Tooltip("Tracking Key の式 (0..1)。例: 1 - TongueOut")]
         public string expression = "";
+    }
+
+    /// <summary>
+    /// スタイル切替。マッピングを選択肢ごとにまとめ、メニューで切り替える (例: 半目の種類)。
+    /// 「自動」では autoExpression の値に最も近い autoValue の選択肢へなめらかに切り替わる。
+    /// </summary>
+    [Serializable]
+    public class FTStyleGroup
+    {
+        public bool enabled = false;
+        public string name = "目の表情";
+        public List<string> options = new List<string>();
+        [Tooltip("メニューに「自動」を付ける")]
+        public bool auto = true;
+        [Tooltip("自動のときに使う Tracking Key の式 (-1..1)")]
+        public string autoExpression = "";
+        [Tooltip("各選択肢が選ばれる autoExpression の値 (選択肢と同じ順)")]
+        public List<float> autoValues = new List<float>();
+        [Tooltip("切替にかける時間 (秒)")]
+        public float transition = 0.2f;
     }
 
     /// <summary>左右共通のシェイプキーを、ビルド時に左右別のシェイプキーへ分ける設定。</summary>
@@ -210,6 +233,7 @@ namespace VRCFTMapper
         public EyeSettings eye = new EyeSettings();
 
         public List<FTLimit> limits = new List<FTLimit>();
+        public FTStyleGroup styleGroup = new FTStyleGroup();
         public List<FTSplit> splits = new List<FTSplit>();
 
         /// <summary>視線として扱うパラメータ名 (マッピングの通常処理から除外し、目の加工後の値を使う)。</summary>

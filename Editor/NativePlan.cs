@@ -45,6 +45,23 @@ namespace VRCFTMapper.Editor
         public readonly Dictionary<FTLimit, Status> limitStatus = new Dictionary<FTLimit, Status>();
         public readonly List<string> warnings = new List<string>();
         public readonly HashSet<SkinnedMeshRenderer> meshes = new HashSet<SkinnedMeshRenderer>();
+
+        /// <summary>アニメーター経由で動かすマッピング (スタイル切替)。入力は Forward to Animator した値。</summary>
+        public class AnimatorMapping { public FTMapping m; public string inputParam; }
+        public readonly List<AnimatorMapping> animatorMappings = new List<AnimatorMapping>();
+        public string styleAutoParam;
+        public const string StyleParam = "VRCFTM/Style";
+        public static string StyleWeight(int option) => "VRCFTM/StyleW/" + option;
+        readonly Dictionary<string, string> forwardByExpr = new Dictionary<string, string>();
+
+        string Forward(string expr)
+        {
+            if (forwardByExpr.TryGetValue(expr, out var p)) return p;
+            p = ForwardPrefix + "In" + forwardByExpr.Count;
+            forwardByExpr[expr] = p;
+            behaviors.Add(new Behavior { forwardParam = p, expr = expr });
+            return p;
+        }
         public int Forwarded => behaviors.Count(b => b.forwardParam != null);
         public int Instructions => behaviors.Sum(b => b.instructions);
         public int Operations;
@@ -81,6 +98,16 @@ namespace VRCFTMapper.Editor
                 else x = NativeKeys.ExprFor(m.parameter);
                 if (x == null) { plan.status[m] = new Status { text = "変換不可: 対応キーなし", error = true }; continue; }
                 plan.meshes.Add(m.renderer);
+
+                // スタイル切替のマッピングはアニメーター経由 (入力だけ転送)
+                var sg = mapper.styleGroup;
+                if (sg.enabled && m.style > 0)
+                {
+                    if (m.style > sg.options.Count) { plan.status[m] = new Status { text = "スタイルの選択肢がありません", error = true }; continue; }
+                    plan.animatorMappings.Add(new AnimatorMapping { m = m, inputParam = plan.Forward(x) });
+                    plan.status[m] = new Status { text = $"アニメーター (スタイル: {sg.options[m.style - 1]})" };
+                    continue;
+                }
 
                 // in → out を折れ線の式に (FTMath.Evaluate と同じ関数)。カーブは式が上限に収まるまで区間数を減らす
                 float lo = Mathf.Min(m.inMin, m.inMax), hi = Mathf.Max(m.inMin, m.inMax);
@@ -189,6 +216,15 @@ namespace VRCFTMapper.Editor
                 if (unknown.Count > 0) { plan.limitStatus[l] = new Status { text = "式に不明な名前: " + string.Join(", ", unknown), error = true }; continue; }
                 plan.behaviors.Add(new Behavior { shape = l.blendShape, expr = expr, limit = l.isMin ? 2 : 1 });
                 plan.limitStatus[l] = new Status { text = l.isMin ? "下限" : "上限" };
+            }
+
+            // スタイルの「自動」用の値
+            var grp = mapper.styleGroup;
+            if (grp.enabled && grp.auto && plan.animatorMappings.Count > 0)
+            {
+                var ae = (grp.autoExpression ?? "").Trim();
+                if (ae.Length > 0 && NativeKeys.UnknownNames(ae).Count == 0) plan.styleAutoParam = plan.Forward(ae);
+                else plan.warnings.Add("スタイルの「自動」の式が空か、不明な名前を含んでいます");
             }
 
             // 目ボーン: 加工 (寄り目制限・カーブ・揺らぎ) はアニメーターで行うため、視線だけ転送
