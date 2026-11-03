@@ -1,0 +1,7 @@
+{
+  "name": "works.hikage.vrcft-mapper.runtime",
+  "references": [
+    "VRC.SDKBase"
+  ],
+  "autoReferenced": true
+}

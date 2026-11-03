@@ -1,0 +1,14 @@
+{
+  "name": "works.hikage.vrcft-mapper.editor",
+  "references": [
+    "works.hikage.vrcft-mapper.runtime",
+    "nadena.dev.ndmf",
+    "nadena.dev.modular-avatar.core",
+    "VRC.SDKBase",
+    "VRC.SDK3A"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "autoReferenced": false
+}

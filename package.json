@@ -1,0 +1,28 @@
+{
+  "name": "works.hikage.vrcft-mapper",
+  "displayName": "VRCFT Mapper",
+  "version": "0.1.0",
+  "unity": "2022.3",
+  "description": "VRCFaceTracking のパラメータをシェイプキーに対応付け、NDMF + Modular Avatar で非破壊に組み込むエディタ拡張。目・視線の調整、OSC プレビュー / 録画、同期容量の計算に対応。",
+  "author": {
+    "name": "hibikine",
+    "url": "https://github.com/hibikine"
+  },
+  "license": "MIT",
+  "licensesUrl": "https://github.com/hibikine/vrcft-mapper/blob/main/LICENSE",
+  "url": "https://github.com/hibikine/vrcft-mapper",
+  "documentationUrl": "https://github.com/hibikine/vrcft-mapper#readme",
+  "changelogUrl": "https://github.com/hibikine/vrcft-mapper/blob/main/CHANGELOG.md",
+  "keywords": [
+    "vrchat",
+    "face tracking",
+    "vrcft",
+    "ndmf",
+    "modular avatar"
+  ],
+  "vpmDependencies": {
+    "com.vrchat.avatars": ">=3.5.0",
+    "nadena.dev.ndmf": ">=1.5.0",
+    "nadena.dev.modular-avatar": ">=1.10.0"
+  }
+}

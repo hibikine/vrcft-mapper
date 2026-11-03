@@ -1,0 +1,43 @@
+# 手動実行専用のリリース。Actions タブの "Run workflow" を押したときだけ動く。
+# package.json の version でタグ (vX.Y.Z) とリリースを作り、VPM 用の zip と package.json を添付する。
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read package info
+        id: pkg
+        run: |
+          echo "name=$(jq -r .name package.json)" >> "$GITHUB_OUTPUT"
+          echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Fail if the tag already exists
+        run: |
+          if git ls-remote --exit-code --tags origin "v${{ steps.pkg.outputs.version }}"; then
+            echo "Tag v${{ steps.pkg.outputs.version }} already exists. Bump version in package.json." >&2
+            exit 1
+          fi
+
+      - name: Build zip
+        run: |
+          zip -r "${{ steps.pkg.outputs.name }}-${{ steps.pkg.outputs.version }}.zip" . \
+            -x ".git/*" ".github/*" ".gitignore"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.pkg.outputs.version }}" \
+            "${{ steps.pkg.outputs.name }}-${{ steps.pkg.outputs.version }}.zip" \
+            package.json \
+            --title "v${{ steps.pkg.outputs.version }}" \
+            --generate-notes
