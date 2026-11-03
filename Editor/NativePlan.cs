@@ -30,6 +30,7 @@ namespace VRCFTMapper.Editor
             public string shape;           // Apply to Blendshape の対象 (Forward のときは null)
             public string forwardParam;    // Forward to Animator の出力先
             public string weightSet;       // null = 常に全強度
+            public int limit;              // 0 = 適用, 1 = 上限 (Limit Max), 2 = 下限 (Limit Min)
             public string expr;
             public int instructions, operations;
             public bool valid = true;
@@ -41,6 +42,7 @@ namespace VRCFTMapper.Editor
         public readonly List<Behavior> behaviors = new List<Behavior>();
         public readonly List<GeneratedShape> generated = new List<GeneratedShape>();
         public readonly Dictionary<FTMapping, Status> status = new Dictionary<FTMapping, Status>();
+        public readonly Dictionary<FTLimit, Status> limitStatus = new Dictionary<FTLimit, Status>();
         public readonly List<string> warnings = new List<string>();
         public readonly HashSet<SkinnedMeshRenderer> meshes = new HashSet<SkinnedMeshRenderer>();
         public int Forwarded => behaviors.Count(b => b.forwardParam != null);
@@ -61,13 +63,22 @@ namespace VRCFTMapper.Editor
             {
                 if (!m.enabled) continue;
                 if (m.renderer == null || string.IsNullOrEmpty(m.blendShape)) { plan.status[m] = new Status { text = "未設定", warning = true }; continue; }
-                bool gaze = VRCFTMapper.IsGaze(m.parameter);
+                bool gaze = !m.useExpression && VRCFTMapper.IsGaze(m.parameter);
                 if (gaze && mapper.gazeMode != GazeMode.BlendShape)
                 {
                     plan.status[m] = new Status { text = mapper.gazeMode == GazeMode.None ? "視線: 無効" : "視線: ボーン側で処理", warning = mapper.gazeMode == GazeMode.None };
                     continue;
                 }
-                var x = NativeKeys.ExprFor(m.parameter);
+                string x;
+                if (m.useExpression)
+                {
+                    x = (m.expression ?? "").Trim();
+                    var unknown = NativeKeys.UnknownNames(x);
+                    if (x.Length == 0) { plan.status[m] = new Status { text = "式が空です", error = true }; continue; }
+                    if (unknown.Count > 0) { plan.status[m] = new Status { text = "式に不明な名前: " + string.Join(", ", unknown), error = true }; continue; }
+                    if (!Estimate(x).valid) { plan.status[m] = new Status { text = "式の書き方が正しくありません", error = true }; continue; }
+                }
+                else x = NativeKeys.ExprFor(m.parameter);
                 if (x == null) { plan.status[m] = new Status { text = "変換不可: 対応キーなし", error = true }; continue; }
                 plan.meshes.Add(m.renderer);
 
@@ -122,7 +133,8 @@ namespace VRCFTMapper.Editor
                     else notes.Add("負の値は 0");
                 }
                 if (m.useCurve) notes.Add(n < segs ? $"カーブ {n} 区間 (式の上限のため {segs} から削減)" : $"カーブ {n} 区間");
-                if (!NativeKeys.IsKey(m.parameter)) notes.Add("簡易パラメータ→式");
+                if (m.useExpression) notes.Add("式入力");
+                else if (!NativeKeys.IsKey(m.parameter)) notes.Add("簡易パラメータ→式");
                 if (gaze) notes.Add("目の加工なし");
                 plan.status[m] = new Status { text = string.Join(" / ", notes), warning = notes.Contains("1 で頭打ち") || notes.Contains("負の値は 0") };
             }
@@ -167,6 +179,18 @@ namespace VRCFTMapper.Editor
                         st.text = Prefix(list.Count > 1 ? "式 (合算)" : "式", st.text);
             }
 
+            // 上限 / 下限 (Limit Blendshape)。対象シェイプの最終値を、式の値で制限する
+            foreach (var l in mapper.limits)
+            {
+                if (!l.enabled) continue;
+                var expr = (l.expression ?? "").Trim();
+                var unknown = NativeKeys.UnknownNames(expr);
+                if (string.IsNullOrEmpty(l.blendShape) || expr.Length == 0) { plan.limitStatus[l] = new Status { text = "未設定", warning = true }; continue; }
+                if (unknown.Count > 0) { plan.limitStatus[l] = new Status { text = "式に不明な名前: " + string.Join(", ", unknown), error = true }; continue; }
+                plan.behaviors.Add(new Behavior { shape = l.blendShape, expr = expr, limit = l.isMin ? 2 : 1 });
+                plan.limitStatus[l] = new Status { text = l.isMin ? "下限" : "上限" };
+            }
+
             // 目ボーン: 加工 (寄り目制限・カーブ・揺らぎ) はアニメーターで行うため、視線だけ転送
             if (mapper.gazeMode == GazeMode.Bone)
                 foreach (var p in NativeGazeParams(mapper))
@@ -187,8 +211,10 @@ namespace VRCFTMapper.Editor
 
         static string GateSet(FTMapping m)
         {
-            var g = m.gate == FTGate.Auto ? FTCatalog.AutoGate(m.parameter) : m.gate;
-            if (VRCFTMapper.IsGaze(m.parameter)) g = FTGate.Eye;
+            var g = m.gate;
+            if (g == FTGate.Auto)
+                g = m.useExpression ? (NativeKeys.UsesEyeKeys(m.expression) ? FTGate.Eye : FTGate.Lip) : FTCatalog.AutoGate(m.parameter);
+            if (!m.useExpression && VRCFTMapper.IsGaze(m.parameter)) g = FTGate.Eye;
             return g == FTGate.Eye ? SetEye : g == FTGate.Lip ? SetFace : SetAlways;
         }
 

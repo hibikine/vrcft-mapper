@@ -116,6 +116,10 @@ namespace VRCFTMapper
         [Tooltip("平滑化係数 (毎フレーム目標値へ近づく割合)。負値 = 全体設定を使用")]
         public float smoothing = -1f;
 
+        [Tooltip("ON: パラメータの代わりに Tracking Key の式を入力にする (ネイティブ出力のみ)。例: TongueOut * (1 - JawOpen)")]
+        public bool useExpression = false;
+        public string expression = "";
+
         [Tooltip("ネイティブ出力で out が 0..1 を超えるとき、変形量を拡大したシェイプキーをビルド時に生成する")]
         public bool overshootShape = true;
 
@@ -128,6 +132,29 @@ namespace VRCFTMapper
             m.curve = new AnimationCurve(curve != null ? curve.keys : AnimationCurve.Linear(0, 0, 1, 1).keys);
             return m;
         }
+    }
+
+    /// <summary>シェイプキーの最終値の上限 / 下限を式で決める (ネイティブ: Limit Blendshape)。</summary>
+    [Serializable]
+    public class FTLimit
+    {
+        public bool enabled = true;
+        public string blendShape = "";
+        [Tooltip("OFF: 上限 (Max) / ON: 下限 (Min)")]
+        public bool isMin = false;
+        [Tooltip("Tracking Key の式 (0..1)。例: 1 - TongueOut")]
+        public string expression = "";
+    }
+
+    /// <summary>左右共通のシェイプキーを、ビルド時に左右別のシェイプキーへ分ける設定。</summary>
+    [Serializable]
+    public class FTSplit
+    {
+        public bool enabled = true;
+        public SkinnedMeshRenderer renderer;
+        public string source = "";
+        [Tooltip("中央で左右を混ぜる幅 (左右の目の間隔に対する割合)")]
+        [Range(0.01f, 1f)] public float band = 0.25f;
     }
 
     [DisallowMultipleComponent]
@@ -181,6 +208,9 @@ namespace VRCFTMapper
         [Range(0.01f, 1f)] public float gazeSmoothing = 0.4f;
 
         public EyeSettings eye = new EyeSettings();
+
+        public List<FTLimit> limits = new List<FTLimit>();
+        public List<FTSplit> splits = new List<FTSplit>();
 
         /// <summary>視線として扱うパラメータ名 (マッピングの通常処理から除外し、目の加工後の値を使う)。</summary>
         public static readonly HashSet<string> GazeNames = new HashSet<string>

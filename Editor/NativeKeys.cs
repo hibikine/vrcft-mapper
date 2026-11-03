@@ -106,6 +106,19 @@ namespace VRCFTMapper.Editor
             return v2.TryGetValue(param, out var e) ? e : null;
         }
 
+        static readonly HashSet<string> functions = new HashSet<string> { "abs", "min", "max", "clamp" };
+
+        public static IEnumerable<string> Identifiers(string expr) =>
+            System.Text.RegularExpressions.Regex.Matches(expr ?? "", "[A-Za-z_][A-Za-z0-9_]*").Cast<System.Text.RegularExpressions.Match>().Select(m => m.Value);
+
+        /// <summary>式の中の、Tracking Key でも関数でもない名前。</summary>
+        public static List<string> UnknownNames(string expr) =>
+            Identifiers(expr).Where(n => !functions.Contains(n) && !IsKey(n)).Distinct().ToList();
+
+        /// <summary>式が目 / 眉のキーを含むか (Eye 側の有効判定にするかの自動判定用)。</summary>
+        public static bool UsesEyeKeys(string expr) =>
+            Identifiers(expr).Any(n => IsKey(n) && (n.StartsWith("Eye") || n.StartsWith("Brow")));
+
         /// <summary>式が単一の Tracking Key か。</summary>
         public static bool IsSingleKey(string expr) => IsKey(expr);
     }

@@ -33,20 +33,13 @@ namespace VRCFTMapper.Editor
             foreach (var w in plan.warnings) Debug.LogWarning("[VRCFT Mapper] " + w);
             var desc = ctx.AvatarRootObject.GetComponent<VRCAvatarDescriptor>();
 
-            // ---- 1) 範囲外用のシェイプキーを生成 ----
+            // ---- 1) 左右分離 → 範囲外用のシェイプキーを生成 (メッシュは複製してから書き換える) ----
             var copies = new Dictionary<SkinnedMeshRenderer, Mesh>();
+            ApplySplits(ctx, mapper, copies);
             foreach (var gs in plan.generated)
             {
                 if (gs.renderer == null || gs.renderer.sharedMesh == null) continue;
-                if (!copies.TryGetValue(gs.renderer, out var mesh))
-                {
-                    mesh = Object.Instantiate(gs.renderer.sharedMesh);
-                    mesh.name = gs.renderer.sharedMesh.name + " (VRCFT Mapper)";
-                    Save(ctx, mesh);
-                    gs.renderer.sharedMesh = mesh;
-                    copies[gs.renderer] = mesh;
-                }
-                AddScaledShape(mesh, gs.source, gs.name, gs.scale);
+                AddScaledShape(MeshCopy(ctx, gs.renderer, copies), gs.source, gs.name, gs.scale);
             }
 
             // ---- 2) アバターデスクリプタ ----
@@ -96,8 +89,9 @@ namespace VRCFTMapper.Editor
                 if (!b.valid) continue;
                 desc.faceTrackingParameterBehaviors.Add(new VRCAvatarDescriptor.FaceTrackingParameterBehavior
                 {
-                    targetMode = b.forwardParam != null
-                        ? VRCAvatarDescriptor.ParameterBehaviorTargetMode.ForwardToAnimator
+                    targetMode = b.forwardParam != null ? VRCAvatarDescriptor.ParameterBehaviorTargetMode.ForwardToAnimator
+                        : b.limit == 1 ? VRCAvatarDescriptor.ParameterBehaviorTargetMode.LimitBlendshapeMax
+                        : b.limit == 2 ? VRCAvatarDescriptor.ParameterBehaviorTargetMode.LimitBlendshapeMin
                         : VRCAvatarDescriptor.ParameterBehaviorTargetMode.ApplyToBlendshape,
                     outputParameterName = b.forwardParam ?? "",
                     targetBlendshapeName = b.shape ?? "",
@@ -170,6 +164,24 @@ namespace VRCFTMapper.Editor
             if (boneGaze)
                 BuildGaze(ctx, mapper, go, p => NativePlan.ForwardPrefix + p, EyeOn,
                     gg => BoolGateLayer(gg, "VRCFT Eye Gate", eyeConds, EyeOn, null));
+        }
+
+        static Mesh MeshCopy(BuildContext ctx, SkinnedMeshRenderer r, Dictionary<SkinnedMeshRenderer, Mesh> copies)
+        {
+            if (copies.TryGetValue(r, out var mesh)) return mesh;
+            mesh = Object.Instantiate(r.sharedMesh);
+            mesh.name = r.sharedMesh.name + " (VRCFT Mapper)";
+            Save(ctx, mesh);
+            r.sharedMesh = mesh;
+            copies[r] = mesh;
+            return mesh;
+        }
+
+        /// <summary>左右分離シェイプキーを生成 (ネイティブ / 従来どちらでも使う)。</summary>
+        public static void ApplySplits(BuildContext ctx, VRCFTMapper mapper, Dictionary<SkinnedMeshRenderer, Mesh> copies)
+        {
+            if (mapper.splits == null || mapper.splits.Count == 0) return;
+            SplitTools.Apply(mapper, ctx.AvatarRootTransform, r => r, r => MeshCopy(ctx, r, copies));
         }
 
         /// <summary>

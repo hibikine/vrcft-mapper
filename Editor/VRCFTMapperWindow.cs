@@ -179,6 +179,7 @@ namespace VRCFTMapper.Editor
 
         bool Gated(FTMapping m)
         {
+            if (m.useExpression) return m.gate == FTGate.Always || (m.gate == FTGate.Auto ? (NativeKeys.UsesEyeKeys(m.expression) ? EyeOn : LipOn) : m.gate == FTGate.Eye ? EyeOn : LipOn);
             if (VRCFTMapper.IsGaze(m.parameter)) return EyeOn && mapper.gazeMode != GazeMode.None;
             var g = m.gate == FTGate.Auto ? FTCatalog.AutoGate(m.parameter) : m.gate;
             return g == FTGate.Eye ? EyeOn : g == FTGate.Lip ? LipOn : true;
@@ -191,15 +192,17 @@ namespace VRCFTMapper.Editor
             return false;
         }
 
+        static string ManualKey(FTMapping m) => m.useExpression ? "expr:" + m.expression : m.parameter;
+
         float Rest(FTMapping m)
-            => manual.TryGetValue(m.parameter, out var mv) ? mv : (FTCatalog.Find(m.parameter)?.rest ?? 0f);
+            => manual.TryGetValue(ManualKey(m), out var mv) ? mv : (m.useExpression ? 0f : FTCatalog.Find(m.parameter)?.rest ?? 0f);
 
         // ------------------------------------------------------------
         float InputFor(FTMapping m, out bool external)
         {
             external = false;
             float v;
-            if (mapper != null && VRCFTMapper.IsGaze(m.parameter) && mapper.gazeMode != GazeMode.None)
+            if (mapper != null && !m.useExpression && VRCFTMapper.IsGaze(m.parameter) && mapper.gazeMode != GazeMode.None)
             {
                 // 視線は「目・視線」タブで入力し、加工後の値を使う
                 external = true;
@@ -326,6 +329,7 @@ namespace VRCFTMapper.Editor
             }
 
             preview.Setup(avatar.gameObject);
+            preview.ApplySplits(mapper);
             if (Event.current.type == EventType.Layout)
                 nativePlan = mapper.outputMode == FTOutputMode.Native ? NativePlan.Build(mapper) : null;
 
@@ -737,6 +741,9 @@ namespace VRCFTMapper.Editor
                         !(m.blendShape ?? "").ToLowerInvariant().Contains(filter.ToLowerInvariant())) continue;
                     if (DrawMapping(i, m)) break; // 削除時
                 }
+                EditorGUILayout.Space();
+                DrawSplits();
+                DrawLimits();
             }
         }
 
@@ -768,7 +775,7 @@ namespace VRCFTMapper.Editor
                     if (EditorGUI.EndChangeCheck()) { Undo.RecordObject(mapper, "有効切替"); m.enabled = en; Dirty(); }
 
                     // パラメータ選択 (カタログ) + 自由入力
-                    if (EditorGUILayout.DropdownButton(new GUIContent(string.IsNullOrEmpty(m.parameter) ? "(パラメータ)" : m.parameter,
+                    if (EditorGUILayout.DropdownButton(new GUIContent(m.useExpression ? "ƒ " + m.expression : string.IsNullOrEmpty(m.parameter) ? "(パラメータ)" : m.parameter,
                         spec != null ? spec.label : "カタログ外の名前"), FocusType.Keyboard, GUILayout.Width(170)))
                         ParamMenu(m);
                     EditorGUI.BeginChangeCheck();
@@ -781,7 +788,8 @@ namespace VRCFTMapper.Editor
                         FocusType.Keyboard, GUILayout.MinWidth(120)))
                         ShapeMenu(m);
 
-                    bool missing = m.renderer == null || m.renderer.sharedMesh == null || m.renderer.sharedMesh.GetBlendShapeIndex(m.blendShape) < 0;
+                    bool missing = m.renderer == null || m.renderer.sharedMesh == null ||
+                        (m.renderer.sharedMesh.GetBlendShapeIndex(m.blendShape) < 0 && !SplitTools.IsSplitName(mapper, m.blendShape));
                     if (missing) GUILayout.Label(EditorGUIUtility.IconContent("console.warnicon.sml", "シェイプキーが見つかりません"), GUILayout.Width(20));
                     if (nativePlan != null && nativePlan.status.TryGetValue(m, out var ns))
                     {
@@ -823,6 +831,22 @@ namespace VRCFTMapper.Editor
                         EditorGUI.BeginChangeCheck();
                         bool os = EditorGUILayout.ToggleLeft(new GUIContent("範囲外はシェイプキー生成", "out が 0..1 を超える / 負になるとき、変形量を拡大・反転したシェイプキーをビルド時に生成"), m.overshootShape, GUILayout.Width(150));
                         if (EditorGUI.EndChangeCheck()) { Undo.RecordObject(mapper, "シェイプキー生成の切替"); m.overshootShape = os; Dirty(); }
+                    }
+                }
+
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    EditorGUI.BeginChangeCheck();
+                    bool ue = EditorGUILayout.ToggleLeft(new GUIContent("式入力", "Tracking Key の式を入力にする (ネイティブ出力のみ)。使える関数: abs min max clamp"), m.useExpression, GUILayout.Width(64));
+                    string ex = m.expression;
+                    using (new EditorGUI.DisabledScope(!ue))
+                        ex = EditorGUILayout.DelayedTextField(m.expression ?? "");
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        Undo.RecordObject(mapper, "式入力の変更");
+                        m.useExpression = ue; m.expression = ex;
+                        if (ue && mapper.outputMode == FTOutputMode.Legacy) ShowNotification(new GUIContent("式入力はネイティブ出力でのみ使えます"));
+                        Dirty(); ApplyPreview();
                     }
                 }
 
@@ -914,7 +938,7 @@ namespace VRCFTMapper.Editor
                             EditorGUI.BeginChangeCheck();
                             float mv = Rest(m);
                             float nv = EditorGUILayout.Slider(VRCFTMapper.IsGaze(m.parameter) ? "加工後 (目・視線タブ)" : external ? "テスト入力 (OSC)" : "テスト入力", external ? inp : mv, viewIn0, 1);
-                            if (EditorGUI.EndChangeCheck()) { manual[m.parameter] = nv; ApplyPreview(); }
+                            if (EditorGUI.EndChangeCheck()) { manual[ManualKey(m)] = nv; ApplyPreview(); }
                         }
                         EditorGUILayout.LabelField($"in {inp:0.000}  →  out {outv:0.000}  (ウェイト {outv * 100f:0.0})", EditorStyles.miniLabel);
                     }
@@ -1003,6 +1027,20 @@ namespace VRCFTMapper.Editor
                     {
                         Undo.RecordObject(mapper, "シェイプキー変更");
                         m.renderer = s; m.blendShape = name;
+                        Dirty(); ApplyPreview();
+                    });
+                }
+            }
+            foreach (var sp in mapper.splits.Where(x => x.enabled && x.renderer != null && !string.IsNullOrEmpty(x.source)))
+            {
+                var (ln, rn) = SplitTools.Names(sp.renderer.sharedMesh, sp.source);
+                foreach (var nm in new[] { ln, rn })
+                {
+                    var spr = sp.renderer; var name2 = nm;
+                    menu.AddItem(new GUIContent("左右分離/" + nm), m.renderer == spr && m.blendShape == nm, () =>
+                    {
+                        Undo.RecordObject(mapper, "シェイプキー変更");
+                        m.renderer = spr; m.blendShape = name2;
                         Dirty(); ApplyPreview();
                     });
                 }

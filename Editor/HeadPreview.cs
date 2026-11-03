@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -121,6 +122,37 @@ namespace VRCFTMapper.Editor
             return true;
         }
 
+        // ---- 左右分離シェイプキー (複製のメッシュにだけ追加) ----
+        readonly Dictionary<SkinnedMeshRenderer, Mesh> originalMesh = new Dictionary<SkinnedMeshRenderer, Mesh>();
+        readonly List<Mesh> ownedMeshes = new List<Mesh>();
+        string splitHash = "";
+
+        public void ApplySplits(VRCFTMapper mapper)
+        {
+            if (clone == null || mapper == null) return;
+            var hash = string.Join("|", mapper.splits.Where(x => x.enabled && x.renderer != null)
+                .Select(x => x.renderer.GetInstanceID() + ":" + x.source + ":" + x.band));
+            if (hash == splitHash) return;
+            splitHash = hash;
+            foreach (var kv in originalMesh) if (kv.Key != null) kv.Key.sharedMesh = kv.Value; // 元に戻してから作り直す
+            foreach (var m in ownedMeshes) if (m != null) UnityEngine.Object.DestroyImmediate(m);
+            ownedMeshes.Clear();
+            var copies = new Dictionary<SkinnedMeshRenderer, Mesh>();
+            SplitTools.Apply(mapper, clone.transform,
+                src => map.TryGetValue(src, out var dst) ? dst : null,
+                dst =>
+                {
+                    if (copies.TryGetValue(dst, out var cm)) return cm;
+                    if (!originalMesh.ContainsKey(dst)) originalMesh[dst] = dst.sharedMesh;
+                    cm = UnityEngine.Object.Instantiate(originalMesh[dst]);
+                    cm.hideFlags = HideFlags.HideAndDontSave;
+                    ownedMeshes.Add(cm);
+                    dst.sharedMesh = cm;
+                    copies[dst] = cm;
+                    return cm;
+                });
+        }
+
         public void SetWeight(SkinnedMeshRenderer src, string shape, float weight100)
         {
             if (src == null || !map.TryGetValue(src, out var dst) || dst.sharedMesh == null) return;
@@ -182,6 +214,8 @@ namespace VRCFTMapper.Editor
         public void Cleanup()
         {
             if (clone != null) UnityEngine.Object.DestroyImmediate(clone);
+            foreach (var m in ownedMeshes) if (m != null) UnityEngine.Object.DestroyImmediate(m);
+            ownedMeshes.Clear(); originalMesh.Clear(); splitHash = "";
             clone = null;
             eyeL = eyeR = null;
             map.Clear();

@@ -181,8 +181,10 @@ namespace VRCFTMapper.Editor
         public static void Generate(BuildContext ctx, VRCFTMapper mapper)
         {
             if (mapper.outputMode == FTOutputMode.Native) { GenerateNative(ctx, mapper); return; }
+            ApplySplits(ctx, mapper, new Dictionary<SkinnedMeshRenderer, Mesh>());
             var root = ctx.AvatarRootTransform;
-            var maps = mapper.mappings.Where(m => m.enabled && m.renderer != null && !string.IsNullOrEmpty(m.blendShape)).ToList();
+            // 式入力のマッピングはネイティブ出力専用
+            var maps = mapper.mappings.Where(m => m.enabled && !m.useExpression && m.renderer != null && !string.IsNullOrEmpty(m.blendShape)).ToList();
             var gazeParams = mapper.GazeParams().ToList();
             if (maps.Count == 0 && gazeParams.Count == 0) return;
 
