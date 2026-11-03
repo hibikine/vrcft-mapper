@@ -15,6 +15,9 @@ VRCFaceTracking (v2 パラメータ) → シェイプキーの対応を Unity �
 
 依存: VRChat SDK Avatars / NDMF / Modular Avatar
 
+### Nightly (開発版)
+main の最新状態を毎回ビルドした不安定版です。`https://vpm.hikage.works/nightly.json` (公開準備中) を追加すると、通常版と Nightly の両方が選べます。通常版の `index.json` とは同時に追加しないでください。
+
 ## 使い方
 | 機能 | 操作 |
 |---|---|

@@ -1,0 +1,70 @@
+# Nightly ビルド: main への push (または手動実行) で、プレリリースとして VPM 用 zip を公開する。
+# 自動実行はリポジトリ変数 NIGHTLY_ENABLED を "true" にするまで行わない (Settings → Secrets and variables → Actions → Variables)。
+# バージョンは package.json の version に -nightly.<日付>.<実行番号> を付けたもの (例: 0.1.0-nightly.20261103.42)。
+# semver ではプレリリースは本体より前に並ぶので、0.1.0 をリリースしたら package.json を 0.1.1 などに上げること。
+name: Nightly
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+env:
+  KEEP: 10 # 残す Nightly リリース数
+
+jobs:
+  nightly:
+    if: github.event_name == 'workflow_dispatch' || vars.NIGHTLY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set nightly version
+        id: pkg
+        run: |
+          base=$(jq -r .version package.json)
+          base=${base%%-*}
+          ver="${base}-nightly.$(date -u +%Y%m%d).${GITHUB_RUN_NUMBER}"
+          jq --arg v "$ver" '.version = $v' package.json > package.tmp && mv package.tmp package.json
+          echo "name=$(jq -r .name package.json)" >> "$GITHUB_OUTPUT"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: Build zip
+        run: |
+          zip -r "${{ steps.pkg.outputs.name }}-${{ steps.pkg.outputs.version }}.zip" . \
+            -x ".git/*" ".github/*" ".gitignore"
+
+      - name: Create prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "nightly-${{ steps.pkg.outputs.version }}" \
+            "${{ steps.pkg.outputs.name }}-${{ steps.pkg.outputs.version }}.zip" \
+            package.json \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "Nightly ${{ steps.pkg.outputs.version }}" \
+            --notes "自動ビルド (${GITHUB_SHA::7})。動作確認用の不安定版です。"
+
+      - name: Remove old nightlies
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --limit 200 --json tagName,createdAt \
+            | jq -r '[.[] | select(.tagName | startswith("nightly-"))] | sort_by(.createdAt) | reverse | .[env.KEEP|tonumber:] | .[].tagName' \
+            | while read -r tag; do gh release delete "$tag" --yes --cleanup-tag; done
+
+      - name: Notify VPM listing
+        env:
+          TOKEN: ${{ secrets.VPM_DISPATCH_TOKEN }}
+        run: |
+          # hibikine/vpm の一覧を更新する (Actions 書き込み権限のある PAT を VPM_DISPATCH_TOKEN に設定した場合のみ)
+          if [ -z "$TOKEN" ]; then echo "VPM_DISPATCH_TOKEN 未設定: 一覧の更新はスキップ"; exit 0; fi
+          GH_TOKEN="$TOKEN" gh api repos/hibikine/vpm/dispatches -f event_type=package-released
