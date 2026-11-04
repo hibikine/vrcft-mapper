@@ -1,6 +1,10 @@
 # Changelog
 
 ## [Unreleased]
+- VRC Avatar Descriptor に Face Tracking 設定がある場合、インスペクターに警告を表示 (ビルド時は上書きされる旨)
+- デスクリプタの Face Tracking 設定を VRCFT Mapper に読み込む「設定を追加する」「設定を上書きする」(Ctrl+Z 対応)
+- デスクリプタの Face Tracking 設定をすべて削除するボタン (確認あり・Ctrl+Z 対応)
+- ビルド時は既存の Face Tracking 設定を既定で上書き。上級者向け設定で「合成」を選択可能
 
 ## [0.2.0] - 2026-11-05
 - 修正: グループグラフでカーブをドラッグ編集した後、Ctrl+Z で元に戻せず直前の別の操作が戻っていた問題

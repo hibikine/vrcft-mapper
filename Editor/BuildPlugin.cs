@@ -187,6 +187,11 @@ namespace VRCFTMapper.Editor
 
         public static void Generate(BuildContext ctx, VRCFTMapper mapper)
         {
+            if (mapper.existingFaceTracking == FTExistingMode.Overwrite)
+            {
+                var d = ctx.AvatarRootObject.GetComponent<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>();
+                if (d != null) DescriptorFT.Clear(d, false); // ビルド用の複製なので Undo 不要
+            }
             if (mapper.outputMode == FTOutputMode.Native) { GenerateNative(ctx, mapper); return; }
             ApplySplits(ctx, mapper, new Dictionary<SkinnedMeshRenderer, Mesh>());
             var root = ctx.AvatarRootTransform;

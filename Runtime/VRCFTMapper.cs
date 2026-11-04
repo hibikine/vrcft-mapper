@@ -41,6 +41,13 @@ namespace VRCFTMapper
         Legacy = 1, // 従来: VRCFT の FT/v2 パラメータを同期し、アニメーターで変形
     }
 
+    /// <summary>ビルド時、アバターデスクリプタに既にある Face Tracking 設定の扱い。</summary>
+    public enum FTExistingMode
+    {
+        Overwrite = 0, // 既存の設定をすべて消してから書き込む (既定)
+        Merge = 1,     // 既存の設定を残して追加する (予期しない動作の可能性あり)
+    }
+
     /// <summary>目周りの調整 (視線の加工・寄り目防止・まぶた追従・揺らぎ)。</summary>
     [Serializable]
     public class EyeSettings
@@ -200,6 +207,8 @@ namespace VRCFTMapper
         public float nativeLerpSpeed = 7f;
         [Tooltip("ネイティブ: ベジエカーブを折れ線の式にするときの区間数")]
         [Range(2, 16)] public int nativeCurveSegments = 8;
+        [Tooltip("ビルド時、アバターデスクリプタに既にある Face Tracking 設定を上書きするか合成するか")]
+        public FTExistingMode existingFaceTracking = FTExistingMode.Overwrite;
 
         // ---- ① トラッキング有効フラグ / メニュー ----
         [Tooltip("EyeTrackingActive / LipTrackingActive / ExpressionTrackingActive を宣言し、メニューにトグルを追加")]
