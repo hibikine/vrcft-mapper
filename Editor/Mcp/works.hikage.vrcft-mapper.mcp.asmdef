@@ -1,0 +1,29 @@
+{
+  "name": "works.hikage.vrcft-mapper.mcp",
+  "rootNamespace": "VRCFTMapper.Editor.Mcp",
+  "references": [
+    "works.hikage.vrcft-mapper.runtime",
+    "works.hikage.vrcft-mapper.editor",
+    "UnityMCP.Editor",
+    "nadena.dev.ndmf",
+    "VRC.SDKBase",
+    "VRC.SDK3A"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "VRCFTM_UNITYMCP"
+  ],
+  "versionDefines": [
+    {
+      "name": "jp.shiranui-isuzu.unity-mcp",
+      "expression": "4.0.0",
+      "define": "VRCFTM_UNITYMCP"
+    }
+  ],
+  "noEngineReferences": false
+}
