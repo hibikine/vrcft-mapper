@@ -2,99 +2,58 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> **開発中です。まだリリースしていません。**
+![Thumbnail](./doc/Preview.jpg)
 
-VRChat のフェイストラッキングで動かすシェイプキーの対応を Unity 上で設定し、ビルド時に非破壊で組み込むエディタ拡張です。
+Modular Avatar対応、非破壊でVRChat用のフェイストラッキング用シェイプキーを作成するUnityエディタ拡張
 
-- **ネイティブ出力 (既定)**: VRChat 2026.4 の Face Tracking (アバターデスクリプタ) に書き出します。表情データは同期パラメータを使いません。
-- **従来出力**: VRCFaceTracking の v2 パラメータを同期し、アニメーターで変形します。
+## 特徴
 
-## 導入
-リリース後は VCC (VRChat Creator Companion) から追加できる予定です。
+- [Modular Avatar](https://modular-avatar.nadena.dev/ja)対応
+- VRChat 2026.4.1で対応したFace Tracking設定に対応
+- VRCFaceTrackingからのOSC入力で受信・録画・再生・プレビュー
+- 設定の左右ミラーリング、命名規則からシェイプキー自動推定
+- シェイプキーの左右分離機能により、まばたきや表情を左右に分けて作成
 
-1. VCC の Settings → Packages → Add Repository に `https://vpm.hikage.works/index.json` を追加 (公開準備中)
-2. アバタープロジェクトの Manage Project から **VRCFT Mapper** を追加
-3. メニュー **Tools > VRCFT Mapper** を開き、アバターを指定 → 「VRCFT Mapper を追加」
+## 準備
 
-依存: VRChat SDK Avatars / NDMF / Modular Avatar
+1. [VCC](https://vcc.docs.vrchat.com/)または[ALCOM](https://vrc-get.anatawa12.com/ja/alcom/)から、VPMに `https://vpm.hikage.works/index.json` を追加してください。
+  - https://vpm.hikage.works/ にVPMリポジトリへのリンクがあります。
+2. プロジェクトを作成していない場合はVCCまたはALCOMで新規プロジェクトを作成してください。
+3. 対象のプロジェクトに前提パッケージをインストールしてください。
+  - VRChat SDK - Base (3.10.6以降)
+  - VRChat SDK - Avatars (3.10.6以降)
+  - [Non-Destructive Modular Framework (NDMF)](https://github.com/bdunderscore/ndmf)
+  - [Modular Avatar](https://modular-avatar.nadena.dev/ja)
+4. プロジェクトを起動してください。
+5. アバターをシーンに配置してください。
+6. VRC Avatar Descriptorが付けられているGameObjectかそれ以下のGameObjectにVRCFT Mapperコンポーネントを追加してください。
 
-### Nightly (開発版)
-main の最新状態を毎回ビルドした不安定版です。`https://vpm.hikage.works/nightly.json` (公開準備中) を追加すると、通常版と Nightly の両方が選べます。通常版の `index.json` とは同時に追加しないでください。
+## 機能
 
-## 使い方
-| 機能 | 操作 |
-|---|---|
-| 顔プレビュー | 左上。Humanoid の Head / Eye ボーンからカメラ位置を自動決定。アバターを複製して描画するので本体は無変更 |
-| 自動設定 | 「標準セット」= よく使う簡易パラメータ約 20 個 / 「全パラメータ」= Unified Expressions 全体。Unified Expressions・ARKit・SRanipal・MMD (あ/お/う/まばたき/ウィンク等)・VRChat viseme 名から検索 |
-| 修正 | 各行のパラメータ▼ (カタログ選択 or 自由入力)、シェイプキー▼ で付け替え。「シェイプキー名から推定」もあり |
-| in / out | 青▼=下、赤▼=上。in の下以下→out 下、上以上→out 上に張り付き。out は -1〜2 まで (0〜1 外はシェイプキー限界超え)。out の▼は交差可能 (= 反転、バーがオレンジ表示)。「⇅ out 反転」でも可 |
-| 詳細モード | 「詳細(カーブ)」ON でベジエ曲線エディタ。ダブルクリック追加、右クリック削除/プリセット、Alt でハンドル分離、Shift でスナップ |
-| ライブプレビュー | 「シーンにライブプレビュー」= AnimationMode で一時反映 (OFF で元に戻る) |
-| OSC テスト | 「OSC ライブ」で UDP 9002 受信。VRCFT の出力先 (または OSC ルーター) を 9002 に向けてください |
-| 録画/再生 | 「● OSC を録画」→ .asset 保存 → 「録画再生」で再生・シーク・ループ |
-| 容量 | 左下バー。Expression Parameters + 他の MA Parameters + FT 分 / 256 bit |
+- OSC入力を受信しリアルタイムでプレビューやシーンに反映させる
+  - プレビューウィンドウ、Playモード、Editモードに対応
+- OSC入力を録画し再生
+  - 実際のプレビューを見ながらパラメータを調整
+- [isuzu-shiranui/UnityMCP](https://github.com/isuzu-shiranui/UnityMCP)のカスタムツールに対応
+  - MCPで接続可能なツール経由でVRCFT Mapperを設定
+- VRChat 2026.4のネイティブFace Trackingと従来のアニメーター方式の両方で書き出し可能
 
-Undo/Redo: マッピング・範囲・カーブ・自動設定・追加/削除・コンポーネント追加はすべて Undo 対応。プレビュー状態・OSC 受信状態・テスト入力値は設定ではないため対象外です。
+## Tips
 
-## ビルド時の生成物
-- `FT/v2/<Name>` (Float, 8bit) または `FT/v2/<Name>1,2,4…` (+ `Negative`) の Bool 群を MA Parameters で宣言
-- Binary は AAP (Animated Animator Parameter) で 1 レイヤー目にデコード (1 フレーム遅延)
-- 2 レイヤー目は Direct BlendTree + 1D BlendTree。カーブは `curveSamples` 点で折れ線近似
-- WD ON 前提 (Direct BlendTree のため)
-
-## トラッキング制御 (v0.2)
-左パネル「トラッキング制御」で設定します。
-
-| # | 機能 | 生成物 |
-|---|---|---|
-| ① | `EyeTrackingActive` / `LipTrackingActive` / `ExpressionTrackingActive` を同期 Bool で宣言、メニュー (既定「Face Tracking」) にトグル | MA Parameters / MA Menu Installer + Menu Item。Mapping 層の各子ツリーの重みを有効フラグにし、OFF 時は出力しない |
-| ② | トラッキング中にハンドジェスチャー表情を停止 | `FacialExpressionsDisabled` (Bool) を Parameter Driver で設定。最終 FX (MA マージ後, Optimizing フェーズ) で Gesture* を参照し顔シェイプキーを動かすレイヤーを検出し、Layer Control で重み 0 (または遷移に条件追加)。対象は UI で除外/追加可 |
-| ③ | トラッキング中は VRChat 標準の自動まばたき・視線 / リップシンクを停止 | VRC Animator Tracking Control (eyes&eyelids / mouth&jaw) |
-| ④ | 指数平滑 `S ← S + k(T−S)` | AAP の Smooth 層。k は IsLocal で自分/他人を切替、パラメータ個別指定も可 |
-| ⑤ | 視線 | シェイプキー型: EyeX/EyeY を eyeLook 系へ自動割当。ボーン型: Additive 層で Eye マッスル駆動 (可動域はアバターの Humanoid 設定から計算、独自に平滑化) |
-
-注意:
-- 有効フラグが OFF のときはシェイプキーを出力しません。テスト時は Av3Emulator 等でフラグを ON にしてください (VRCFT 接続時は自動で ON)。
-- ボーン型視線は Additive + 加算基準ポーズを使います。向きが逆なら X/Y 反転で調整し、実機で確認してください。
-- AAO など Optimizing フェーズでレイヤーを統合・削除するツールと併用する場合、② の Layer Control のレイヤー番号がずれる可能性があります。その場合は ② を「遷移条件」方式にしてください。
-
-## 目・視線 (v0.3)
-右パネル「目・視線」タブで設定します。視線の方式が Bone / BlendShape のときに有効です。
-
-| 機能 | 内容 | 実装 |
-|---|---|---|
-| 視線調整 | オフセット / 倍率 (変化量スケーリング) / デッドゾーン / 「今の視線を正面にする」 | Eye Shape レイヤー (33 点の折れ線) |
-| 視線変化カーブ | |入力| に対するベジエカーブ (符号は保持) | 同上 |
-| 寄り目制御 | 左右差 v を反映率で縮め、内寄せ / 外開きを tanh で滑らかに上限処理。デフォルメ向けプリセットあり | Eye Verge + Eye Soft Limit レイヤー |
-| まぶた追従 | 下を見ると上まぶたを下げる / 上を見ると見開く。目を閉じているほど弱まる | Mapping の Direct ツリーに 2D ブレンドで加算 |
-| 揺らぎ | 固視微動 (正弦の和) + マイクロサッカード (ランダム間隔の小さな跳び)。30 秒ループ | ループクリップで AAP を駆動し出力に加算 |
-
-- テスト: 視線パッド (ドラッグ)・X/Y スライダー・片目の寄せ量・注視距離 (m) から寄り目を再現。顔プレビューで目ボーン / eyeLook シェイプキー / まぶたが動きます。
-- 処理は 平滑化 → 整形 → 揺らぎ → 輻輳 → ソフト上限 → 出力 の順で、各段が別レイヤーのため数フレームの遅れがあります。
-- 目ボーンは Additive、シェイプキー視線とまぶた追従は FX で同じパイプラインを生成します (AAP はレイヤー間で共有されないため)。
-
-## ライセンス
-[MIT License](LICENSE)
-
-
-## ネイティブ出力 (VRChat Face Tracking)
-上部ツールバーの「出力」で切り替えます (既定: ネイティブ)。必要: VRChat SDK Avatars 3.10.6 以降。
-
-| マッピングの内容 | 書き出し先 |
-|---|---|
-| 単一キー・0 始まり・最大 1 (または生成シェイプで 1 に正規化) | Blendshapes Set (倍率) |
-| 範囲・反転・カーブ・簡易パラメータ (SmileFrown など)・同じシェイプへの複数マッピング | Parameter Behavior (Apply to Blendshape + Custom 式) |
-| out が 0..1 の範囲外 | 変形量を拡大 / 反転したシェイプキー (`VRCFTM/<名前>*<倍率>`) をビルド時にメッシュの複製へ生成 |
-| まぶた追従 | 式でまばたきシェイプに加算 |
-| 目ボーンの加工 (寄り目制限・カーブ・揺らぎ) | 視線 2〜3 値だけ Forward to Animator し、Additive で処理 |
-
-- 各マッピングの行に変換結果 (● 直結 / ƒ 式 / ✕ 不可) を表示。左下に Face Tracking Operations / Forwarded Parameters のランク予測と式の命令数 (上限 2048) を表示します。
-- 有効判定は VRChat 標準の `UserEyeTracking` / `UserFaceTracking`。メニューの「Face Tracking」トグル (同期 1bit) で FT / 手動表情を切替え、Blendshapes Set の重みを 0/1 にします。
+- 各マッピングの行に変換結果 (● 直結 / ƒ 式 / ✕ 不可) を表示します。左下に Face Tracking Operations / Forwarded Parameters のランク予測と式の命令数 (上限 2048) を表示します。
+- 有効判定は VRChat 標準の `UserEyeTracking` / `UserFaceTracking` から行います
+- VRCFT Mapperによってメニューに追加される「Face Tracking」トグル (同期 1bit) でFace Trackingと手動表情の切り替えができます。
 - カーブの式が上限 (1024 文字 / 256 命令) を超える場合は区間数を自動で減らします。
 - 簡易パラメータ (EyeLid, SmileFrown など) は Unified Expressions のキーの式で近似します。パラメータ選択メニューの「ネイティブキー」から 102 キーを直接選ぶこともできます。
 - 注意: VRChat 側の「マイクミュート時にアイトラッキング / フェイストラッキングを無効化」が ON だと、ミュート中は止まります。
 
-### 式入力・上限 / 下限・左右分離 (ネイティブ出力)
+### 式入力
 - **式入力**: マッピングを開いて「式入力」を ON にすると、パラメータの代わりに Tracking Key の式を入力にできます (例: `TongueOut * (1 - JawOpen)`)。使える関数は `abs` `min` `max` `clamp`。
 - **上限・下限**: マッピング一覧の下で、シェイプキーの最終値を式で制限します (例: `mouth_A` の上限 = `1 - TongueOut`)。
-- **左右分離シェイプキー**: 左右共通のシェイプキーを、ビルド時に左右別へ分けます。境界は両目ボーンの中点 (無ければアバターのルート)、中央は「幅」でなめらかに混ぜ、左 + 右 = 元になります。名前はメッシュの命名規則 (`_left`/`_right` か `_L`/`_R`) に合わせ、シェイプキー選択の「左右分離」から選べます。顔プレビューにも反映されます。
+
+### シェイプキーの左右分離
+
+左右共通のシェイプキーを、ビルド時に左右別へ分けます。たとえば、両目が一緒に動くまばたきシェイプキーを分離し、片目ずつ適用できるようにします。
+
+## ライセンス
+[MIT License](LICENSE)
