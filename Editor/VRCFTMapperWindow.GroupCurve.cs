@@ -7,15 +7,22 @@ namespace VRCFTMapper.Editor
 {
     /// <summary>
     /// 統合グラフ上でマッピングのベジエカーブ (FTMapping.curve) を直接編集する。
-    /// ・曲線をダブルクリック: そのマッピングをカーブ編集対象にする (編集中ならその位置に点を追加)
-    /// ・点 / ハンドルをドラッグ: 移動 (Shift: スナップ, Alt: ハンドル分離)
+    /// ・曲線 (またはリストの行) にホバー: その曲線の制御点とハンドルを表示
+    /// ・点 / ハンドルをドラッグ: 移動 (Shift: スナップ, Alt: ハンドル分離)。ハンドルを動かすとカーブが有効になる
     /// ・Ctrl + 端の点をドラッグ: 両端の出力値を変更 (通常は in 範囲のドラッグが優先)
-    /// ・右クリック: 点の削除 / プリセット / リセット / カーブ無効化 / 編集終了
+    /// ・ホバー中の曲線をダブルクリック: 点を追加
+    /// ・右クリック: 点の削除 / プリセット / カーブ有効・無効
+    ///
+    /// 重なり時の優先度:
+    ///  1. ドラッグ中の曲線
+    ///  2. 制御点 (ホバー中の曲線の点 → 最も近い点)。ただし in 範囲ハンドルの方が近ければそちら
+    ///  3. 曲線本体 (ホバー中の曲線は判定に余裕を持たせて維持、同距離なら上に描かれている曲線)
     /// </summary>
     public partial class VRCFTMapperWindow
     {
         const float CurveVMin = -0.25f, CurveVMax = 1.25f;
-        FTMapping curveEdit;   // カーブ編集中のマッピング
+        const float PointPick = 7f, LinePick = 8f, LineSticky = 4f;
+        FTMapping cvDrag;       // ドラッグ中の曲線
         int cvKey = -1, cvPart; // part: 0 点, 1 in ハンドル, 2 out ハンドル
 
         static Keyframe[] CurveKeys(FTMapping m)
@@ -58,64 +65,109 @@ namespace VRCFTMapper.Editor
             return new Vector2(t, v);
         }
 
-        bool CurveEditable(List<FTMapping> ms) => curveEdit != null && ms.Contains(curveEdit) && Vis(curveEdit) > 0.001f;
-
-        void DrawCurveHandles(Rect r, List<FTMapping> ms, float x0, float y0, float y1)
+        /// <summary>
+        /// 曲線の制御点・ハンドルを拾う。カーブ無効の曲線も直線カーブとしてハンドルを出す
+        /// (ハンドルを動かすとカーブが有効になる)。端の点は in ハンドルと重なるので ctrl 時のみ。
+        /// </summary>
+        int PickCurve(Rect r, FTMapping m, Keyframe[] keys, Vector2 mp, bool ctrl, float x0, float y0, float y1, out int part, out float dist)
         {
-            if (!CurveEditable(ms)) return;
-            var m = curveEdit;
-            var keys = CurveKeys(m);
-            int col = ms.IndexOf(m);
-            Handles.BeginGUI();
-            for (int i = 0; i < keys.Length; i++)
-            {
-                var kp = CvToGUI(r, m, new Vector2(keys[i].time, keys[i].value), x0, y0, y1);
-                if (m.useCurve)
-                {
-                    if (i > 0) { var h = CvToGUI(r, m, CvHandle(keys, i, false), x0, y0, y1); Handles.color = FTControls.Blue; Handles.DrawAAPolyLine(1.5f, kp, h); Handles.DrawSolidDisc(h, Vector3.forward, 4); }
-                    if (i < keys.Length - 1) { var h = CvToGUI(r, m, CvHandle(keys, i, true), x0, y0, y1); Handles.color = FTControls.Red; Handles.DrawAAPolyLine(1.5f, kp, h); Handles.DrawSolidDisc(h, Vector3.forward, 4); }
-                }
-                if (i == 0 || i == keys.Length - 1) continue; // 端は in ハンドルと重なるので描かない
-                var fill = cvKey == i && curveEdit == m ? Color.white : new Color(0.9f, 0.9f, 0.9f);
-                Handles.DrawSolidRectangleWithOutline(new Rect(kp.x - 4, kp.y - 4, 8, 8), fill, Palette[col % Palette.Length]);
-            }
-            Handles.EndGUI();
-            var lab = m.useCurve
-                ? $"カーブ編集: {m.blendShape}   ダブルクリック:点追加  右クリック:メニュー  Ctrl+端:出力値  Alt:ハンドル分離"
-                : $"カーブ編集: {m.blendShape} (カーブ無効 / ダブルクリックで点を追加すると有効化)";
-            GUI.Label(new Rect(r.xMin + 4, r.yMax - 16, r.width - 8, 16), lab, EditorStyles.miniLabel);
-        }
-
-        int PickCurve(Rect r, FTMapping m, Keyframe[] keys, Vector2 mp, bool ctrl, float x0, float y0, float y1, out int part)
-        {
-            part = 0;
-            int best = -1; float bd = 7;
+            part = 0; dist = PointPick;
+            int best = -1;
             for (int i = 0; i < keys.Length; i++)
             {
                 bool end = i == 0 || i == keys.Length - 1;
                 if (!end || ctrl)
                 {
                     float d = Vector2.Distance(mp, CvToGUI(r, m, new Vector2(keys[i].time, keys[i].value), x0, y0, y1));
-                    if (d < bd) { bd = d; best = i; part = 0; }
+                    if (d < dist) { dist = d; best = i; part = 0; }
                 }
-                if (!m.useCurve) continue;
-                if (i > 0) { float d = Vector2.Distance(mp, CvToGUI(r, m, CvHandle(keys, i, false), x0, y0, y1)); if (d < bd) { bd = d; best = i; part = 1; } }
-                if (i < keys.Length - 1) { float d = Vector2.Distance(mp, CvToGUI(r, m, CvHandle(keys, i, true), x0, y0, y1)); if (d < bd) { bd = d; best = i; part = 2; } }
+                if (i > 0) { float d = Vector2.Distance(mp, CvToGUI(r, m, CvHandle(keys, i, false), x0, y0, y1)); if (d < dist) { dist = d; best = i; part = 1; } }
+                if (i < keys.Length - 1) { float d = Vector2.Distance(mp, CvToGUI(r, m, CvHandle(keys, i, true), x0, y0, y1)); if (d < dist) { dist = d; best = i; part = 2; } }
             }
             return best;
         }
 
-        FTMapping NearestCurve(Rect r, List<FTMapping> ms, Vector2 mp, float x0, float y0, float y1)
+        float RangeHandleDist(Rect r, List<FTMapping> ms, Vector2 mp, float x0, float y0, float y1)
         {
-            float x = Mathf.Lerp(x0, 1, Mathf.InverseLerp(r.xMin, r.xMax, mp.x));
-            FTMapping best = null; float bd = 8;
+            float bd = float.MaxValue;
             foreach (var m in ms)
             {
                 if (Vis(m) <= 0.001f) continue;
-                float d = Mathf.Abs(P(r, x, FTMath.Evaluate(m, x), x0, y0, y1).y - mp.y);
-                if (d < bd) { bd = d; best = m; }
+                for (int e = 0; e < 2; e++)
+                {
+                    float x = e == 0 ? m.inMin : m.inMax;
+                    bd = Mathf.Min(bd, Vector2.Distance(P(r, x, FTMath.Evaluate(m, x), x0, y0, y1), mp));
+                }
             }
+            return bd;
+        }
+
+        /// <summary>制御点の当たり判定 (優先度 2)。ホバー中の曲線の点を優先。</summary>
+        FTMapping PointTarget(Rect r, List<FTMapping> ms, Vector2 mp, bool ctrl, float x0, float y0, float y1, out int key, out int part)
+        {
+            key = -1; part = 0;
+            FTMapping best = null; float bd = float.MaxValue;
+            var order = ms.Where(m => Vis(m) > 0.001f).ToList();
+            if (hotMapping != null && order.Remove(hotMapping)) order.Insert(0, hotMapping);
+            foreach (var m in order)
+            {
+                int k = PickCurve(r, m, CurveKeys(m), mp, ctrl, x0, y0, y1, out int pt, out float d);
+                if (k < 0) continue;
+                if (m == hotMapping) { best = m; key = k; part = pt; bd = d; break; } // ホバー中の曲線の点は最優先
+                if (d < bd) { bd = d; best = m; key = k; part = pt; }
+            }
+            if (best != null && RangeHandleDist(r, ms, mp, x0, y0, y1) < bd) { key = -1; return null; } // in ハンドルの方が近い
             return best;
+        }
+
+        /// <summary>曲線本体の当たり判定 (優先度 3)。ホバー中は余裕を持たせて維持、同距離なら上に描かれた曲線。</summary>
+        FTMapping LineTarget(Rect r, List<FTMapping> ms, Vector2 mp, float x0, float y0, float y1)
+        {
+            float x = Mathf.Lerp(x0, 1, Mathf.InverseLerp(r.xMin, r.xMax, mp.x));
+            FTMapping best = null; float bd = float.MaxValue;
+            for (int k = 0; k < ms.Count; k++) // 後に描かれた (上にある) 曲線が同距離で勝つよう <=
+            {
+                var m = ms[k];
+                if (Vis(m) <= 0.001f) continue;
+                float d = Mathf.Abs(P(r, x, FTMath.Evaluate(m, x), x0, y0, y1).y - mp.y);
+                if (m == hotMapping) d -= LineSticky;
+                if (d <= bd) { bd = d; best = m; }
+            }
+            return bd < LinePick ? best : null;
+        }
+
+        void DrawCurveHandles(Rect r, List<FTMapping> ms, float x0, float y0, float y1)
+        {
+            var m = cvDrag ?? hotMapping;
+            if (m == null || !ms.Contains(m) || Vis(m) <= 0.001f) return;
+            var keys = CurveKeys(m);
+            var pal = Palette[ms.IndexOf(m) % Palette.Length];
+            float a = m.useCurve ? 1f : 0.45f; // カーブ無効時は控えめに
+            Handles.BeginGUI();
+            for (int i = 0; i < keys.Length; i++)
+            {
+                var kp = CvToGUI(r, m, new Vector2(keys[i].time, keys[i].value), x0, y0, y1);
+                if (i > 0) DrawTangent(kp, CvToGUI(r, m, CvHandle(keys, i, false), x0, y0, y1), FTControls.Blue, a, cvDrag == m && cvKey == i && cvPart == 1);
+                if (i < keys.Length - 1) DrawTangent(kp, CvToGUI(r, m, CvHandle(keys, i, true), x0, y0, y1), FTControls.Red, a, cvDrag == m && cvKey == i && cvPart == 2);
+                if (i == 0 || i == keys.Length - 1) continue; // 端は in ハンドルと重なるので描かない
+                var fill = cvDrag == m && cvKey == i && cvPart == 0 ? Color.white : new Color(0.85f, 0.85f, 0.85f);
+                Handles.DrawSolidRectangleWithOutline(new Rect(kp.x - 4, kp.y - 4, 8, 8), fill, pal);
+            }
+            Handles.EndGUI();
+            if (cvDrag == null && r.Contains(Event.current.mousePosition))
+            {
+                var lab = m.useCurve ? "ダブルクリック:点追加  右クリック:メニュー  Ctrl+端:出力値  Alt:ハンドル分離"
+                                     : "ハンドルをドラッグ / ダブルクリックでカーブを有効化";
+                GUI.Label(new Rect(r.xMin + 4, r.yMax - 16, r.width - 8, 16), lab, EditorStyles.miniLabel);
+            }
+        }
+
+        static void DrawTangent(Vector2 from, Vector2 to, Color c, float a, bool active)
+        {
+            c.a *= a;
+            Handles.color = c;
+            Handles.DrawAAPolyLine(1.5f, from, to);
+            Handles.DrawSolidDisc(to, Vector3.forward, active ? 5 : 4);
         }
 
         void SetCurveKeys(FTMapping m, Keyframe[] keys, bool enable = true)
@@ -129,71 +181,72 @@ namespace VRCFTMapper.Editor
         bool HandleCurveInput(Rect r, List<FTMapping> ms, float x0, float y0, float y1, int id)
         {
             var ev = Event.current;
-            if (curveEdit != null && !mapper.mappings.Contains(curveEdit)) curveEdit = null;
-            bool editable = CurveEditable(ms);
+            if (cvDrag != null && !mapper.mappings.Contains(cvDrag)) { cvDrag = null; cvKey = -1; }
 
             switch (ev.GetTypeForControl(id))
             {
+                case EventType.MouseMove:
+                case EventType.Repaint:
+                {
+                    if (cvDrag != null && ms.Contains(cvDrag)) { hotNext = cvDrag; return true; }
+                    if (GUIUtility.hotControl != 0 || !r.Contains(ev.mousePosition)) return false;
+                    var t = PointTarget(r, ms, ev.mousePosition, ev.control || ev.command, x0, y0, y1, out _, out _)
+                            ?? LineTarget(r, ms, ev.mousePosition, x0, y0, y1);
+                    if (t == null) return false;
+                    hotNext = t;
+                    if (ev.type == EventType.MouseMove) Repaint();
+                    return true;
+                }
+
                 case EventType.MouseDown:
                 {
                     if (!r.Contains(ev.mousePosition)) return false;
-                    var near = NearestCurve(r, ms, ev.mousePosition, x0, y0, y1);
+                    var pt = PointTarget(r, ms, ev.mousePosition, ev.control || ev.command, x0, y0, y1, out int key, out int part);
 
                     if (ev.button == 1)
                     {
-                        var target = editable ? curveEdit : near;
+                        var target = pt ?? LineTarget(r, ms, ev.mousePosition, x0, y0, y1);
                         if (target == null) return false;
-                        var keys0 = CurveKeys(target);
-                        int k0 = editable ? PickCurve(r, target, keys0, ev.mousePosition, true, x0, y0, y1, out int p0) : -1;
-                        ShowCurveMenu(target, editable, k0);
+                        ShowCurveMenu(target, pt != null && part == 0 ? key : -1);
                         ev.Use();
                         return true;
                     }
                     if (ev.button != 0) return false;
 
-                    if (editable)
+                    if (pt != null)
                     {
-                        var m = curveEdit;
-                        var keys = CurveKeys(m);
-                        int k = PickCurve(r, m, keys, ev.mousePosition, ev.control || ev.command, x0, y0, y1, out int part);
-                        if (k >= 0)
-                        {
-                            Undo.RecordObject(mapper, "カーブ編集 (グラフ)");
-                            cvKey = k; cvPart = part;
-                            GUIUtility.hotControl = id;
-                            ev.Use();
-                            return true;
-                        }
-                        if (ev.clickCount == 2 && near == m)
-                        {
-                            var tv = GUIToCv(r, m, ev.mousePosition, x0, y0, y1);
-                            if (tv.x > 0.001f && tv.x < 0.999f)
-                            {
-                                Undo.RecordObject(mapper, "カーブ点を追加");
-                                if (!m.useCurve) { m.useCurve = true; }
-                                var c = new AnimationCurve(keys);
-                                float slope = (c.Evaluate(tv.x + 0.01f) - c.Evaluate(tv.x - 0.01f)) / 0.02f;
-                                int ni = c.AddKey(new Keyframe(tv.x, Mathf.Clamp(tv.y, CurveVMin, CurveVMax), slope, slope, 1f / 3, 1f / 3) { weightedMode = WeightedMode.Both });
-                                SetCurveKeys(m, c.keys);
-                                cvKey = ni; cvPart = 0;
-                                GUIUtility.hotControl = id;
-                                ev.Use();
-                                return true;
-                            }
-                        }
+                        Undo.RecordObject(mapper, "カーブ編集 (グラフ)");
+                        cvDrag = pt; cvKey = key; cvPart = part;
+                        GUIUtility.hotControl = id;
+                        ev.Use();
+                        return true;
                     }
                     if (ev.clickCount == 2)
                     {
-                        if (near != null && near != curveEdit) { curveEdit = near; cvKey = -1; ev.Use(); Repaint(); return true; }
-                        if (near == null && curveEdit != null && ms.Contains(curveEdit)) { curveEdit = null; ev.Use(); Repaint(); return true; }
+                        var m = LineTarget(r, ms, ev.mousePosition, x0, y0, y1);
+                        if (m == null) return false;
+                        var tv = GUIToCv(r, m, ev.mousePosition, x0, y0, y1);
+                        if (tv.x <= 0.001f || tv.x >= 0.999f) return false;
+                        Undo.RecordObject(mapper, "カーブ点を追加");
+                        var keys = CurveKeys(m);
+                        var c = new AnimationCurve(keys);
+                        // 点は曲線上 (マウスの x 位置) に置き、形を変えない
+                        float v = m.useCurve ? c.Evaluate(tv.x) : tv.x;
+                        float slope = m.useCurve ? (c.Evaluate(tv.x + 0.01f) - c.Evaluate(tv.x - 0.01f)) / 0.02f : 1f;
+                        int ni = c.AddKey(new Keyframe(tv.x, v, slope, slope, 1f / 3, 1f / 3) { weightedMode = WeightedMode.Both });
+                        SetCurveKeys(m, c.keys);
+                        cvDrag = m; cvKey = ni; cvPart = 0;
+                        GUIUtility.hotControl = id;
+                        ev.Use();
+                        return true;
                     }
-                    return false;
+                    return false; // 空き領域 / 曲線本体のシングルクリック → スクラブ
                 }
 
                 case EventType.MouseDrag:
                 {
-                    if (GUIUtility.hotControl != id || cvKey < 0 || !editable) return false;
-                    var m = curveEdit;
+                    if (GUIUtility.hotControl != id || cvDrag == null || cvKey < 0) return false;
+                    var m = cvDrag;
                     var keys = CurveKeys(m);
                     if (cvKey >= keys.Length) { cvKey = -1; return false; }
                     var p = GUIToCv(r, m, ev.mousePosition, x0, y0, y1);
@@ -224,21 +277,21 @@ namespace VRCFTMapper.Editor
                     }
                     k.weightedMode = WeightedMode.Both;
                     keys[cvKey] = k;
-                    SetCurveKeys(m, keys, enable: m.useCurve || cvPart == 0);
+                    SetCurveKeys(m, keys);
                     ev.Use();
                     return true;
                 }
 
                 case EventType.MouseUp:
-                    if (GUIUtility.hotControl != id || cvKey < 0) return false;
-                    GUIUtility.hotControl = 0; cvKey = -1;
+                    if (GUIUtility.hotControl != id || cvDrag == null) return false;
+                    GUIUtility.hotControl = 0; cvDrag = null; cvKey = -1;
                     ev.Use();
                     return true;
             }
             return false;
         }
 
-        void ShowCurveMenu(FTMapping m, bool editing, int key)
+        void ShowCurveMenu(FTMapping m, int key)
         {
             var menu = new GenericMenu();
             void Set(string undo, Keyframe[] keys)
@@ -246,12 +299,10 @@ namespace VRCFTMapper.Editor
                 Undo.RecordObject(mapper, undo);
                 for (int i = 0; i < keys.Length; i++) keys[i].weightedMode = WeightedMode.Both;
                 SetCurveKeys(m, keys);
-                curveEdit = m;
             }
-            if (!editing) menu.AddItem(new GUIContent($"{m.blendShape} のカーブを編集"), false, () => { curveEdit = m; Repaint(); });
-            else menu.AddItem(new GUIContent("カーブ編集を終了"), false, () => { curveEdit = null; Repaint(); });
+            menu.AddDisabledItem(new GUIContent(m.blendShape));
             var cur = CurveKeys(m);
-            if (editing && key > 0 && key < cur.Length - 1)
+            if (key > 0 && key < cur.Length - 1)
             {
                 int kk = key;
                 menu.AddItem(new GUIContent("点を削除"), false, () =>
