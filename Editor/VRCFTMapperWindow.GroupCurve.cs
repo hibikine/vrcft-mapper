@@ -178,6 +178,8 @@ namespace VRCFTMapper.Editor
         }
 
         /// <summary>カーブ編集の入力を処理したら true (以降のグラフ処理をスキップ)。</summary>
+        int cvUndoGroup = -1;
+
         bool HandleCurveInput(Rect r, List<FTMapping> ms, float x0, float y0, float y1, int id)
         {
             var ev = Event.current;
@@ -215,7 +217,10 @@ namespace VRCFTMapper.Editor
 
                     if (pt != null)
                     {
-                        Undo.RecordObject(mapper, "カーブ編集 (グラフ)");
+                        // 変更は MouseDrag 側で記録し、MouseUp で 1 操作にまとめる
+                        Undo.IncrementCurrentGroup();
+                        Undo.SetCurrentGroupName("カーブ編集 (グラフ)");
+                        cvUndoGroup = Undo.GetCurrentGroup();
                         cvDrag = pt; cvKey = key; cvPart = part;
                         GUIUtility.hotControl = id;
                         ev.Use();
@@ -276,6 +281,7 @@ namespace VRCFTMapper.Editor
                         if (!ev.alt && !last) k.outTangent = k.inTangent;
                     }
                     k.weightedMode = WeightedMode.Both;
+                    Undo.RecordObject(mapper, "カーブ編集 (グラフ)");
                     keys[cvKey] = k;
                     SetCurveKeys(m, keys);
                     ev.Use();
@@ -285,6 +291,7 @@ namespace VRCFTMapper.Editor
                 case EventType.MouseUp:
                     if (GUIUtility.hotControl != id || cvDrag == null) return false;
                     GUIUtility.hotControl = 0; cvDrag = null; cvKey = -1;
+                    if (cvUndoGroup >= 0) { Undo.CollapseUndoOperations(cvUndoGroup); cvUndoGroup = -1; }
                     ev.Use();
                     return true;
             }

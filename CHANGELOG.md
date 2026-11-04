@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+- 修正: グループグラフでカーブをドラッグ編集した後、Ctrl+Z で元に戻せず直前の別の操作が戻っていた問題
 - 式入力のマッピング、上限 / 下限 (Limit Blendshape)、左右分離シェイプキーの自動生成
 - ネイティブ出力 (VRChat Face Tracking): Blendshapes Set / Parameter Behavior への書き出し、範囲外用シェイプキー生成、ランク予測、FT / 表情トグル
 - プレイモードのアバター (Av3Emulator / Gesture Manager / Animator) へトラッキング有効フラグと入力を送る機能
