@@ -124,7 +124,7 @@ namespace VRCFTMapper.Editor.Mcp
         }
 
         [McpTool("vrcft_evaluate",
-            "フェイストラッキングの入力値を与えたときに各シェイプキーへ入るウェイト (0..100) をエディタ上で計算する。シーンは変えない。式入力のマッピングは対象外。",
+            "フェイストラッキングの入力値を与えたときに各シェイプキーへ入るウェイト (0..100) をエディタ上で計算する。シーンは変えない。式入力のマッピングも計算する (入力名は Unified Expressions / ネイティブキー名)。",
             Idempotency = McpIdempotency.Safe,
             Examples = new[] { "{\"inputs\": {\"EyeClosedLeft\": 0.4, \"MouthCornerPullLeft\": 0.8}, \"style\": \"半目\"}" })]
         public static JObject Evaluate(
@@ -146,8 +146,14 @@ namespace VRCFTMapper.Editor.Mcp
             foreach (var x in m.mappings)
             {
                 if (!x.enabled || string.IsNullOrEmpty(x.blendShape)) continue;
-                if (x.useExpression) { skipped.Add(x.blendShape); continue; }
-                float v = inputs != null && inputs.TryGetValue(x.parameter, out var iv) ? iv : FTCatalog.Find(x.parameter)?.rest ?? 0f;
+                float Get(string n) => inputs != null && inputs.TryGetValue(n, out var iv) ? iv : FTCatalog.Find(n)?.rest ?? 0f;
+                float v;
+                if (x.useExpression)
+                {
+                    try { v = Expr.Eval(x.expression, Get); }
+                    catch (Exception e) { skipped.Add($"{x.blendShape}: {e.Message}"); continue; }
+                }
+                else v = Get(x.parameter);
                 float sw = StyleWeight(g, x, sel, style_auto);
                 if (sw <= 0) continue;
                 var key = (x.renderer ? x.renderer.name + "/" : "") + x.blendShape;
@@ -158,8 +164,90 @@ namespace VRCFTMapper.Editor.Mcp
             {
                 ["weights"] = new JObject(w.Where(kv => Mathf.Abs(kv.Value) > 0.05f).OrderByDescending(kv => kv.Value).Select(kv => new JProperty(kv.Key, Math.Round(kv.Value, 1)))),
             };
-            if (skipped.Count > 0) res["skippedExpressionMappings"] = new JArray(skipped.Distinct());
+            if (skipped.Count > 0) res["expressionErrors"] = new JArray(skipped.Distinct());
             return res;
+        }
+
+        /// <summary>Tracking Key の式 (+ - * / 括弧, abs min max clamp) の最小評価器。</summary>
+        static class Expr
+        {
+            public static float Eval(string src, Func<string, float> get)
+            {
+                int i = 0;
+                float r = Sum(src, ref i, get);
+                Skip(src, ref i);
+                if (i < src.Length) throw new FormatException($"式の {i} 文字目が読めません");
+                return r;
+            }
+            static void Skip(string s, ref int i) { while (i < s.Length && char.IsWhiteSpace(s[i])) i++; }
+            static float Sum(string s, ref int i, Func<string, float> get)
+            {
+                float v = Prod(s, ref i, get);
+                while (true)
+                {
+                    Skip(s, ref i);
+                    if (i < s.Length && s[i] == '+') { i++; v += Prod(s, ref i, get); }
+                    else if (i < s.Length && s[i] == '-') { i++; v -= Prod(s, ref i, get); }
+                    else return v;
+                }
+            }
+            static float Prod(string s, ref int i, Func<string, float> get)
+            {
+                float v = Unary(s, ref i, get);
+                while (true)
+                {
+                    Skip(s, ref i);
+                    if (i < s.Length && s[i] == '*') { i++; v *= Unary(s, ref i, get); }
+                    else if (i < s.Length && s[i] == '/') { i++; float d = Unary(s, ref i, get); v = d == 0 ? 0 : v / d; }
+                    else return v;
+                }
+            }
+            static float Unary(string s, ref int i, Func<string, float> get)
+            {
+                Skip(s, ref i);
+                if (i < s.Length && s[i] == '-') { i++; return -Unary(s, ref i, get); }
+                if (i < s.Length && s[i] == '+') { i++; return Unary(s, ref i, get); }
+                return Atom(s, ref i, get);
+            }
+            static float Atom(string s, ref int i, Func<string, float> get)
+            {
+                Skip(s, ref i);
+                if (i >= s.Length) throw new FormatException("式が途中で終わっています");
+                if (s[i] == '(') { i++; float v = Sum(s, ref i, get); Skip(s, ref i); Expect(s, ref i, ')'); return v; }
+                int st = i;
+                if (char.IsDigit(s[i]) || s[i] == '.')
+                {
+                    while (i < s.Length && (char.IsDigit(s[i]) || s[i] == '.')) i++;
+                    return float.Parse(s.Substring(st, i - st), System.Globalization.CultureInfo.InvariantCulture);
+                }
+                while (i < s.Length && (char.IsLetterOrDigit(s[i]) || s[i] == '_')) i++;
+                if (st == i) throw new FormatException($"式の {i} 文字目 '{s[i]}' が読めません");
+                var id = s.Substring(st, i - st);
+                Skip(s, ref i);
+                if (i < s.Length && s[i] == '(')
+                {
+                    i++;
+                    var args = new List<float>();
+                    Skip(s, ref i);
+                    if (i < s.Length && s[i] != ')')
+                        while (true) { args.Add(Sum(s, ref i, get)); Skip(s, ref i); if (i < s.Length && s[i] == ',') { i++; continue; } break; }
+                    Expect(s, ref i, ')');
+                    switch (id.ToLowerInvariant())
+                    {
+                        case "abs": return Mathf.Abs(args[0]);
+                        case "min": return args.Min();
+                        case "max": return args.Max();
+                        case "clamp": return Mathf.Clamp(args[0], args[1], args[2]);
+                        default: throw new FormatException($"関数 {id} は未対応です");
+                    }
+                }
+                return get(id);
+            }
+            static void Expect(string s, ref int i, char c)
+            {
+                if (i >= s.Length || s[i] != c) throw new FormatException($"'{c}' がありません");
+                i++;
+            }
         }
 
         static float StyleWeight(FTStyleGroup g, FTMapping m, int sel, float autoValue)

@@ -12,10 +12,8 @@
   "includePlatforms": [
     "Editor"
   ],
-  "overrideReferences": true,
-  "precompiledReferences": [
-    "Newtonsoft.Json.dll"
-  ],
+  "overrideReferences": false,
+  "precompiledReferences": [],
   "autoReferenced": false,
   "defineConstraints": [
     "VRCFTM_UNITYMCP"
