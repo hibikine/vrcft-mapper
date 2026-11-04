@@ -92,7 +92,7 @@ namespace VRCFTMapper.Editor
             if (mapper != null && previewSmoothing && osc.source != OscInput.Source.Manual)
                 changed |= StepSmoothing(dt);
             if (mapper != null && jitterPreview && mapper.gazeMode != GazeMode.None && EyeOn &&
-                (mapper.eye.tremor > 0 || mapper.eye.saccade > 0) && now - lastJitterRepaint > 1 / 30.0)
+                mapper.eye.jitterEnabled && (mapper.eye.tremor > 0 || mapper.eye.saccade > 0) && now - lastJitterRepaint > 1 / 30.0)
             {
                 lastJitterRepaint = now;
                 changed = true;

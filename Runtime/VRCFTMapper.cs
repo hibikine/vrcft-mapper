@@ -81,6 +81,8 @@ namespace VRCFTMapper
         public string lidDownLeft = "", lidDownRight = "", lidUpLeft = "", lidUpRight = "";
 
         // ---- 揺らぎ (トラッキング中のみ加算) ----
+        [Tooltip("目のランダムな動き (震え・跳び) を有効にする")]
+        public bool jitterEnabled = false;
         [Tooltip("微細な震え (固視微動) の振幅 (入力単位)")]
         [Range(0f, 0.1f)] public float tremor = 0.008f;
         [Tooltip("小さな視線の跳び (マイクロサッカード) の振幅")]

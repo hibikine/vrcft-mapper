@@ -544,7 +544,7 @@ namespace VRCFTMapper.Editor
 
             // 3) 揺らぎ (30 秒ループのクリップ)
             string jx = P("JX"), jy = P("JY");
-            bool jitter = e.tremor > 0 || e.saccade > 0;
+            bool jitter = e.jitterEnabled && (e.tremor > 0 || e.saccade > 0);
             if (jitter)
             {
                 g.Decl(jx); g.Decl(jy);

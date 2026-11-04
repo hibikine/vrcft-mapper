@@ -62,6 +62,7 @@ namespace VRCFTMapper.Editor
         /// </summary>
         public static Vector2 Jitter(EyeSettings e, float t)
         {
+            if (!e.jitterEnabled) return Vector2.zero;
             t = Mathf.Repeat(t, JitterLength);
             float L = JitterLength;
             float w(float hz) => 2 * Mathf.PI * Mathf.Round(hz * L) / L;

@@ -171,17 +171,21 @@ namespace VRCFTMapper.Editor
                 if (showEyeJitter)
                     using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
                     {
-                        EditorGUILayout.PropertyField(E("tremor"), new GUIContent("微細な震え", "固視微動。0.005〜0.015 程度"));
-                        EditorGUILayout.PropertyField(E("saccade"), new GUIContent("小さな跳び", "マイクロサッカード。0.02〜0.05 程度"));
-                        EditorGUILayout.PropertyField(E("saccadeInterval"), new GUIContent("跳びの間隔 (秒)"));
-                        using (new EditorGUILayout.HorizontalScope())
+                        EditorGUILayout.PropertyField(E("jitterEnabled"), new GUIContent("ランダムな動きを有効にする", "オフにすると震え・跳びをプレビューにもビルドにも加えません"));
+                        using (new EditorGUI.DisabledScope(!E("jitterEnabled").boolValue))
                         {
-                            EditorGUILayout.PropertyField(E("seed"), new GUIContent("シード"));
-                            if (GUILayout.Button("別パターン", GUILayout.Width(80))) E("seed").intValue = UnityEngine.Random.Range(1, 99999);
+                            EditorGUILayout.PropertyField(E("tremor"), new GUIContent("微細な震え", "固視微動。0.005〜0.015 程度"));
+                            EditorGUILayout.PropertyField(E("saccade"), new GUIContent("小さな跳び", "マイクロサッカード。0.02〜0.05 程度"));
+                            EditorGUILayout.PropertyField(E("saccadeInterval"), new GUIContent("跳びの間隔 (秒)"));
+                            using (new EditorGUILayout.HorizontalScope())
+                            {
+                                EditorGUILayout.PropertyField(E("seed"), new GUIContent("シード"));
+                                if (GUILayout.Button("別パターン", GUILayout.Width(80))) E("seed").intValue = UnityEngine.Random.Range(1, 99999);
+                            }
+                            var jr = GUILayoutUtility.GetRect(10, 70, GUILayout.ExpandWidth(true));
+                            DrawJitterTrack(jr, e);
+                            EditorGUILayout.LabelField($"30 秒ループのアニメーションとしてビルドされます (全員の画面で同じ揺れ方)", EditorStyles.miniLabel);
                         }
-                        var jr = GUILayoutUtility.GetRect(10, 70, GUILayout.ExpandWidth(true));
-                        DrawJitterTrack(jr, e);
-                        EditorGUILayout.LabelField($"30 秒ループのアニメーションとしてビルドされます (全員の画面で同じ揺れ方)", EditorStyles.miniLabel);
                     }
 
                 ApplyEye(so);
