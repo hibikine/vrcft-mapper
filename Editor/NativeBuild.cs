@@ -148,6 +148,7 @@ namespace VRCFTMapper.Editor
                 maParams.parameters.Add(new ParameterConfig { nameOrPrefix = GestureTools.DisabledParam, syncType = ParameterSyncType.NotSynced, localOnly = true });
 
             BuildStyle(ctx, g, mapper, plan, maParams);
+            AddBaseline(ctx, go, new[] { ctrl });
 
             if (mapper.generateTrackingMenu)
             {

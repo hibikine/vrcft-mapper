@@ -444,6 +444,7 @@ namespace VRCFTMapper.Editor
 
             if (mapper.generateTrackingMenu) BuildMenu(go, mapper);
             if (mapper.gazeMode == GazeMode.Bone) BuildGaze(ctx, mapper, go);
+            AddBaseline(ctx, go, new[] { ctrl });
         }
 
         static FTGate GateOf(FTMapping m) => m.gate == FTGate.Auto ? FTCatalog.AutoGate(m.parameter) : m.gate;
