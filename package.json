@@ -1,7 +1,7 @@
 {
   "name": "works.hikage.vrcft-mapper",
   "displayName": "VRCFT Mapper",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "unity": "2022.3",
   "description": "VRCFaceTracking のパラメータをシェイプキーに対応付け、NDMF + Modular Avatar で非破壊に組み込むエディタ拡張。目・視線の調整、OSC プレビュー / 録画、同期容量の計算に対応。",
   "author": {
