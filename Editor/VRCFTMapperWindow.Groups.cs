@@ -321,6 +321,7 @@ namespace VRCFTMapper.Editor
                     EditorGUI.DrawRect(hr, e == 0 ? FTControls.Blue : FTControls.Red);
                 }
             }
+            DrawCurveHandles(r, ms, x0, y0, y1);
             // ホバー中の曲線名
             if (hotMapping != null && ms.Contains(hotMapping) && r.Contains(Event.current.mousePosition))
             {
@@ -337,6 +338,7 @@ namespace VRCFTMapper.Editor
             int id = GUIUtility.GetControlID(FocusType.Passive, r);
             YRange(ms, out float y0, out float y1);
             float MouseX() => Mathf.Lerp(x0, 1, Mathf.InverseLerp(r.xMin, r.xMax, ev.mousePosition.x));
+            if (HandleCurveInput(r, ms, x0, y0, y1, id)) return;
 
             switch (ev.GetTypeForControl(id))
             {
